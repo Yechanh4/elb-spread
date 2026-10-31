@@ -65,10 +65,14 @@ jobs:
       - env:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
         run: python -m tools.build_site refresh --db shard.sqlite --shard ${{ matrix.shard }}/8
+      - name: Screener for this shard's tickers (parallel across shards instead of one long build step)
+        run: python -m tools.build_site screen --db shard.sqlite --out screen.json
       - uses: actions/upload-artifact@v4
         with:
           name: shard-${{ matrix.shard }}
-          path: shard.sqlite
+          path: |
+            shard.sqlite
+            screen.json
           retention-days: 2
 
   build:
@@ -90,6 +94,7 @@ jobs:
           if curl -fsSL "$base/full.sqlite.gz" -o prev.sqlite.gz; then gunzip -f prev.sqlite.gz; echo "restored full.sqlite.gz";
           elif curl -fsSL "$base/market.sqlite" -o prev.sqlite; then echo "restored legacy market.sqlite";
           else cp seed/market.sqlite prev.sqlite; echo "first deploy: using seed/market.sqlite"; fi
+          curl -fsSL "$base/index.json" -o prev_index.json || echo "no previous index.json"
       - uses: actions/download-artifact@v4
         if: needs.refresh.result != 'skipped'
         continue-on-error: true
@@ -99,7 +104,8 @@ jobs:
       - name: Merge new data over the previous snapshot and build site/
         run: |
           python -m tools.build_site merge --base prev.sqlite --shards $(ls shards/shard-*/shard.sqlite 2>/dev/null) --out full.sqlite
-          python -m tools.build_site site --db full.sqlite --out site
+          python -m tools.build_site site --db full.sqlite --out site --prev-index prev_index.json \
+            --screens $(ls shards/shard-*/screen.json 2>/dev/null)
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

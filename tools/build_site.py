@@ -40,6 +40,7 @@ def shard_of(tickers, spec):
 
 
 def refresh(db, tickers, log=print, macros=True):
+    # every shard refreshes the (cheap) macro series too: its screener needs the 3-month T-bill rate
     from data.cache import Cache
     from data.service import MarketDataService
     svc = MarketDataService(Cache(db))
@@ -111,7 +112,7 @@ def _rows_by_ticker(db):
     return by
 
 
-def export(db, out, log=print, screener=True):
+def export(db, out, log=print, screener=True, screens=(), prev_index=None):
     """site/: web files, py.zip, data/core.sqlite, data/t/*.json, data/index.json, data/full.sqlite.gz."""
     out = Path(out)
     if out.exists():
@@ -140,7 +141,7 @@ def export(db, out, log=print, screener=True):
                         asof=min(r[2] for r in rows), chains=sum(1 for r in rows if r[0] == "chain"))
     scr = dict(rows=[], errors={}, asof=None)
     if screener:
-        scr = precompute_screener(full, list(index), log)
+        scr = combine_screener(full, list(index), screens, prev_index, log)
     (data / "index.json").write_text(json.dumps(dict(generated=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                                                      tickers=index, screener=scr), separators=(",", ":")))
     with open(full, "rb") as f, gzip.open(str(full) + ".gz", "wb", compresslevel=9) as g:
@@ -169,7 +170,7 @@ def _screen_chunk(args):
     return run_screener(svc, tickers, r_usd)
 
 
-def precompute_screener(db, tickers, log=print, workers=None):
+def precompute_screener(db, tickers, log=print, workers=None, all_known=None):
     """Screener metrics for every ticker, computed once at build time (in parallel) so the static site can
     list the cheapest options across the whole universe without downloading it."""
     import os
@@ -177,9 +178,13 @@ def precompute_screener(db, tickers, log=print, workers=None):
     from app.page1 import jsonable
     from core.vol import screen
     workers = workers or min(4, os.cpu_count() or 1)
-    chunks = [(str(db), tickers[i::workers], tickers) for i in range(workers)]
+    workers = max(1, min(workers, len(tickers)))
+    known = list(all_known or tickers)
+    chunks = [(str(db), tickers[i::workers], known) for i in range(workers)]
     rows, errors = [], {}
-    if workers == 1:
+    if not tickers:
+        parts = []
+    elif workers == 1:
         parts = [_screen_chunk(chunks[0])]
     else:
         with ProcessPoolExecutor(workers) as ex:
@@ -192,6 +197,47 @@ def precompute_screener(db, tickers, log=print, workers=None):
     return jsonable(dict(rows=rows, errors=errors, asof=datetime.now(timezone.utc).isoformat(timespec="seconds")))
 
 
+def combine_screener(db, tickers, screens=(), prev_index=None, log=print):
+    """Screener for the whole universe without recomputing it here: rows the refresh shards computed on fresh
+    data first, then the previous build's rows for tickers no shard covered (refresh failed, or a push with no
+    refresh), and only what is still missing is computed now."""
+    from app.page1 import jsonable
+    from core.vol import screen
+    rows, errors, covered = {}, {}, set()
+    for f in screens:
+        if not Path(f).exists():
+            continue
+        d = json.loads(Path(f).read_text())
+        covered |= set(d.get("tickers") or [])
+        rows.update({r["ticker"]: r for r in d["rows"]})
+        errors.update(d.get("errors") or {})
+    fresh = len(rows)
+    reused = 0
+    if prev_index and Path(prev_index).exists():
+        try:
+            prev = json.loads(Path(prev_index).read_text()).get("screener") or {}
+        except ValueError:
+            prev = {}
+        for r in prev.get("rows") or []:
+            if r["ticker"] not in covered and r["ticker"] in tickers and r["ticker"] not in rows:
+                rows[r["ticker"]] = r
+                covered.add(r["ticker"])
+                reused += 1
+        for t, e in (prev.get("errors") or {}).items():
+            if t not in covered and t in tickers:
+                errors[t] = e
+                covered.add(t)
+    missing = [t for t in tickers if t not in covered]
+    if missing:
+        part = precompute_screener(db, missing, lambda *a: None, all_known=tickers)
+        rows.update({r["ticker"]: r for r in part["rows"]})
+        errors.update(part["errors"])
+    log(f"screener: {fresh} from refresh shards, {reused} reused from the previous build, {len(missing)} computed now")
+    return jsonable(dict(rows=screen([r for t, r in rows.items() if t in tickers]),
+                         errors={t: e for t, e in errors.items() if t in tickers and t not in rows},
+                         asof=datetime.now(timezone.utc).isoformat(timespec="seconds")))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd")
@@ -199,6 +245,11 @@ def main(argv=None):
     s.add_argument("--db", default=str(ROOT / "data" / "market.sqlite"))
     s.add_argument("--out", default=str(ROOT / "site"))
     s.add_argument("--no-screener", action="store_true")
+    s.add_argument("--screens", nargs="*", default=[], help="screen.json files from the refresh shards")
+    s.add_argument("--prev-index", default=None, help="the previous build's index.json (reuse its screener rows)")
+    c = sub.add_parser("screen")
+    c.add_argument("--db", required=True)
+    c.add_argument("--out", required=True)
     r = sub.add_parser("refresh")
     r.add_argument("--db", required=True)
     r.add_argument("--tickers", default=str(ROOT / "tickers.txt"))
@@ -211,12 +262,19 @@ def main(argv=None):
     if a.cmd == "refresh":
         tickers = shard_of(read_tickers(a.tickers), a.shard)
         print(f"shard {a.shard}: {len(tickers)} tickers")
-        refresh(a.db, tickers, macros=a.shard.startswith("0/"))
+        refresh(a.db, tickers)
+    elif a.cmd == "screen":
+        from data.cache import Cache
+        tickers = Cache(a.db).keys("info")
+        d = precompute_screener(a.db, tickers)
+        d["tickers"] = tickers
+        Path(a.out).write_text(json.dumps(d, separators=(",", ":")))
     elif a.cmd == "merge":
         merge(a.base, a.shards, a.out)
     else:
         export(getattr(a, "db", str(ROOT / "data" / "market.sqlite")), getattr(a, "out", str(ROOT / "site")),
-               screener=not getattr(a, "no_screener", False))
+               screener=not getattr(a, "no_screener", False), screens=getattr(a, "screens", []),
+               prev_index=getattr(a, "prev_index", None))
 
 
 if __name__ == "__main__":

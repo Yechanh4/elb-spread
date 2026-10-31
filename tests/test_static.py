@@ -103,3 +103,20 @@ def test_ticker_list_and_shards():
     assert all(x == x.upper() and "." not in x for x in t)
     parts = [shard_of(t, f"{i}/8") for i in range(8)]
     assert sorted(sum(parts, [])) == sorted(t) and max(map(len, parts)) - min(map(len, parts)) <= 1
+
+
+def test_combine_screener_prefers_shards_then_previous_then_computes(snapshot, tmp_path):
+    from tools.build_site import combine_screener
+    d, db = snapshot
+    shard = tmp_path / "screen.json"
+    shard.write_text(json.dumps(dict(tickers=["AAA"], errors={}, rows=[dict(ticker="AAA", iv_minus_hv=-0.5, iv_rank_proxy=0.1,
+                                                                         tag="shard")])))
+    prev = tmp_path / "prev_index.json"
+    prev.write_text(json.dumps(dict(screener=dict(rows=[dict(ticker="AAA", iv_minus_hv=0.9, iv_rank_proxy=0.9, tag="old"),
+                                                       dict(ticker="BBB", iv_minus_hv=0.1, iv_rank_proxy=0.5, tag="old")]))))
+    out = combine_screener(db, ["AAA", "BBB"], [shard], prev, log=lambda *a: None)
+    by = {r["ticker"]: r for r in out["rows"]}
+    assert by["AAA"]["tag"] == "shard" and by["BBB"]["tag"] == "old"          # fresh shard rows win over old ones
+    assert [r["ticker"] for r in out["rows"]] == ["AAA", "BBB"]                # re-sorted cheapest first
+    out = combine_screener(db, ["AAA", "BBB"], [], None, log=lambda *a: None)   # nothing to reuse: computed here
+    assert {r["ticker"] for r in out["rows"]} == {"AAA", "BBB"} and "tag" not in out["rows"][0]
