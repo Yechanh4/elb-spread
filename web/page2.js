@@ -89,6 +89,7 @@ function p2Candidates() {
       ${["sigma", "mu"].map(k => `<div style="display:grid;grid-template-columns:28px repeat(3,1fr);gap:4px;margin:3px 0;font-size:12px">
         <span class="sub">${k === "sigma" ? "σ̂" : "μ̂"}</span>${P2.state.scenarios.map(s => `<input data-c="${i}" data-k="${k}" data-s="${s.name}" type="number" step="0.01"
           placeholder="${SCN_KO[s.name]}" value="${sv(c, k, s.name)}" style="width:100%;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface-2)">`).join("")}</div>`).join("")}
+      <div id="p2csug${i}"></div>
       <div class="field"><label>확신도</label><input data-c="${i}" data-k="conf" type="number" step="0.05" min="0" max="1" value="${c.conf ?? 0.7}"></div></div>`).join("")}`;
   const q = $("#p2q");
   q.addEventListener("keydown", e => {
@@ -115,6 +116,11 @@ function p2CandInfo() {
     const r = P2.result.candidates.find(x => x.ticker === c.ticker.toUpperCase()), el = $("#p2cinfo" + i);
     if (!r || !el) return;
     el.innerHTML = r.eligible ? `<span class="badge good">Edge ${mdl("+" + pct(r.edge_mix))}</span>` : `<span class="badge bad" data-tip="${esc(r.reason)}">제외</span>`;
+    const sg = $("#p2csug" + i);
+    sg.innerHTML = sugInline(r.sigma_suggest, i);
+    sg.querySelectorAll("[data-sugk]").forEach(b => b.onclick = () => {
+      applySug(c, P2.state.scenarios, +b.dataset.sugv, b.dataset.sugm); p2save(); p2Candidates();
+    });
   });
 }
 

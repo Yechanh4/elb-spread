@@ -128,3 +128,5 @@ footer.disc { position: sticky; bottom: 0; z-index: 15; background: var(--surfac
 .sughead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
 .sughead .btn { padding: 1px 8px; font-size: 12px; }
 .sughead .btn:disabled { opacity: .6; cursor: default; }
+.suginline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; margin: 2px 0 4px; }
+.suginline .btn { padding: 0 6px; font-size: 11.5px; }

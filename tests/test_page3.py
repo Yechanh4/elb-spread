@@ -35,6 +35,7 @@ def test_page3_structure(out):
     r0 = out["schedule"][0]["legs"][0]
     assert r0["K1"] > 0 and r0["n_contracts"] >= 0 and r0["actions"] and {x["code"] for x in r0["rules"]} == {
         "R-1", "R-2", "R-3", "R-4", "R-5", "R-6"}
+    assert all(t["sigma_suggest"]["suggested"] > 0 for t in out["tickers"] if "K1" in t)
     later = out["schedule"][20]["legs"]
     assert [l["ticker"] for l in later] == ["AAA", "BBB"] and later[0]["weight"] == pytest.approx(0.2)
 

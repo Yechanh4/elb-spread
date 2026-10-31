@@ -20,7 +20,7 @@ from core.vol import hv_close_to_close, iv_rank_proxy, screen
 from data.service import DataUnavailable
 from data.trading_days import quote_label
 
-from .page1 import aligned_closes, density_for, jsonable, pick_expiry
+from .page1 import aligned_closes, density_for, jsonable, pick_expiry, suggestion_for
 
 SCEN = ("up", "neutral", "down")
 DEFAULT = dict(
@@ -145,6 +145,7 @@ def prepare(svc, cand, names, probs, g, cons, B0, fx, r_usd):
                 narrowest_K2=sel["narrowest"].K2, narrowest_rt=sel["narrowest"].rt_cost,
                 e_multiple={s: expected_roll_multiple(marg[s], sp.k1, sp.k2, sp.cost_rel) for s in names},
                 q_pass=md.passed, eligible=not reasons, reason="; ".join(reasons) or None,
+                sigma_suggest=suggestion_for(b, chosen, md.iv_atm),
                 stale=b.stale, data_asof=b.data_asof.isoformat() if b.data_asof else None)
     spec = TickerSpec(T_, sp.k1, sp.k2, sp.cost_rel, marg, sector=inf["sector"]) if not reasons else None
     extra = dict(md=md, net_mid=sp.net_mid, sig=sig, mu=mu, conf=conf, names=names)

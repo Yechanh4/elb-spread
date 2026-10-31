@@ -295,6 +295,28 @@ function sugBlock(i, g, t) {
     ${t.use_catalyst && (t.catalysts || []).length ? `<div class="note alert">카탈리스트 계산기 사용 중 — 추천값을 적용하면 계산기는 꺼짐(실적이 이미 들어 있어 이중 반영 방지)</div>` : ""}
   </div>`;
 }
+// σ̂ suggestion as one line for the scenario grids (Pages 2-3): fills every scenario, or only the neutral one
+function sugTip(g) {
+  const E = g.earnings;
+  return `기본(실적일 제외) ${pct(g.base)} = ${g.base_source} (GARCH ${pct(g.models.garch)} · HAR ${pct(g.models.har)}) + 만기 전 실적 ${E.in_window.length}회`
+    + (E.n_history ? ` (과거 ${E.n_history}회 RMS ±${pct(E.rms_move)})` : " (과거 실적 데이터 없음)")
+    + ` · 만기 ${g.n_days}거래일. 금리 시나리오와 무관한 값이라 기본은 모든 시나리오에 넣음.`;
+}
+function sugInline(g, key) {
+  if (!g || g.error || !isNum(g.suggested)) return "";
+  const e = g.edge_vs_iv;
+  return `<div class="suginline"><span data-tip="${esc(sugTip(g))}">σ̂ 추천 ${mdl(pct(g.suggested))}</span>
+    <span class="badge ${e > 0.02 ? "good" : e > 0 ? "warn" : "bad"}" data-tip="추천 σ̂ − ATM IV. IV는 보통 실현변동성보다 2~4%p 높음">IV ${(e >= 0 ? "+" : "−") + (Math.abs(e) * 100).toFixed(1)}%p</span>
+    <button class="btn" data-sugk="${key}" data-sugv="${g.suggested}" data-sugm="all">모두 적용</button>
+    <button class="btn" data-sugk="${key}" data-sugv="${g.suggested}" data-sugm="neutral">중립만</button></div>`;
+}
+function applySug(target, scenarios, v, mode) {
+  v = Math.round(v * 1000) / 1000;
+  const o = (target.sigma && typeof target.sigma === "object") ? target.sigma
+    : (target.sigma != null ? Object.fromEntries(scenarios.map(s => [s.name, target.sigma])) : {});
+  scenarios.forEach(s => { if (mode === "all" || s.name === "neutral") o[s.name] = v; });
+  target.sigma = o;
+}
 function onTickerInput(e) {
   const i = +e.target.dataset.t, k = e.target.dataset.k, t = S.state.tickers[i];
   let v = e.target.type === "checkbox" ? e.target.checked : e.target.value;

@@ -37,6 +37,9 @@ def test_page2_json_and_eligibility(out):
     assert not by["DDD"]["eligible"] and "Edge" in by["DDD"]["reason"]
     assert set(out["universe"]) == {"AAA", "BBB", "EEE", "FFF"}
     assert set(by["AAA"]["sigma"]) == {"up", "neutral", "down"}
+    for c in by.values():                       # every priced candidate, eligible or not, carries a suggestion
+        g = c["sigma_suggest"]
+        assert g["suggested"] > 0 and g["edge_vs_iv"] == pytest.approx(g["suggested"] - c["iv_atm"])
 
 
 def test_slider_picks_trade_off_and_constraints(out):

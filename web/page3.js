@@ -104,7 +104,8 @@ function p3edit() {
     </div>
     <h3>시나리오별 σ̂ / μ̂ (비우면 HV 1y / 견해 없음)</h3>
     ${st.tickers.map((t, i) => ["sigma", "mu"].map(k => `<div style="display:grid;grid-template-columns:64px repeat(3,1fr);gap:4px;margin:2px 0;font-size:12px">
-      <span class="sub">${k === "sigma" ? esc(t.ticker) + " σ̂" : "μ̂"}</span>${st.scenarios.map(s => inp(`data-v="${i},${k},${s.name}" type="number" step="0.01" placeholder="${SCN_KO[s.name]}"`, sv(t, k, s.name))).join("")}</div>`).join("")).join("")}
+      <span class="sub">${k === "sigma" ? esc(t.ticker) + " σ̂" : "μ̂"}</span>${st.scenarios.map(s => inp(`data-v="${i},${k},${s.name}" type="number" step="0.01" placeholder="${SCN_KO[s.name]}"`, sv(t, k, s.name))).join("")}</div>`
+      + (k === "sigma" ? `<div style="margin-left:68px">${sugInline(P3.result?.tickers?.find(x => x.ticker === t.ticker.toUpperCase())?.sigma_suggest, i)}</div>` : "")).join("")).join("")}
     <h3>금리 시나리오 (사이클당 bp / 확률)</h3>
     ${st.scenarios.map((s, i) => `<div style="display:grid;grid-template-columns:64px 1fr 1fr;gap:4px;margin:2px 0;font-size:12px"><span class="sub">${SCN_KO[s.name]}</span>
       ${inp(`data-s="${i},shift_bp" type="number" step="5"`, s.shift_bp)}${inp(`data-s="${i},prob" type="number" step="0.05"`, s.prob)}</div>`).join("")}
@@ -124,6 +125,9 @@ function p3edit() {
     const o = (t[k] && typeof t[k] === "object") ? t[k] : (t[k] != null ? Object.fromEntries(st.scenarios.map(sc => [sc.name, t[k]])) : {});
     o[s] = v; t[k] = Object.values(o).some(z => z != null) ? o : null; p3save(); p3edit();
   }));
+  E.querySelectorAll("[data-sugk]").forEach(b => b.onclick = () => {
+    applySug(st.tickers[+b.dataset.sugk], st.scenarios, +b.dataset.sugv, b.dataset.sugm); p3save(); p3edit();
+  });
   E.querySelectorAll("[data-s]").forEach(x => x.addEventListener("change", e => { const [i, k] = e.target.dataset.s.split(","); st.scenarios[+i][k] = +e.target.value; p3save(); p3edit(); }));
   E.querySelectorAll("[data-g3]").forEach(x => x.addEventListener("change", e => {
     const k = e.target.dataset.g3; let v = e.target.type === "checkbox" ? e.target.checked : e.target.value;
@@ -137,7 +141,7 @@ function p3edit() {
 async function p3run() {
   if (P3.busy) return;
   P3.busy = true; const b = $("#p3run"); if (b) { b.disabled = true; b.textContent = "계산 중…"; } $("#busy").style.display = "block";
-  try { P3.result = await api("/api/page3", P3.state); P3.roll = null; p3render(); }
+  try { P3.result = await api("/api/page3", P3.state); P3.roll = null; p3render(); p3edit(); }
   catch (e) { $("#p3out").innerHTML = `<div class="panel banner">계산 실패: ${esc(e.message)}</div>`; }
   finally { P3.busy = false; if (b) { b.disabled = false; b.textContent = "타임라인 계산"; } $("#busy").style.display = "none"; }
 }
