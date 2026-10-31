@@ -65,11 +65,58 @@ document.addEventListener("mouseover", ev => {
 document.addEventListener("mouseout", ev => { if (ev.target.closest("[data-tip]")) hideTip(); });
 
 // ------------------------------------------------------------------ api
+// Static build (GitHub Pages): the same Python runs in a Pyodide Web Worker instead of a server.
+const STATIC = document.documentElement.dataset.static === "1";
+let worker = null, wseq = 0;
+const wpending = new Map();
+function pyWorker() {
+  if (worker) return worker;
+  worker = new Worker("worker.js");
+  worker.onmessage = e => {
+    const m = e.data;
+    if ("progress" in m) {
+      const b = $("#busy");
+      if (m.progress) { b.textContent = m.progress + "…"; b.style.display = "block"; }
+      else { b.textContent = "계산 중…"; }
+      return;
+    }
+    const p = wpending.get(m.id); if (!p) return;
+    wpending.delete(m.id);
+    m.ok ? p.resolve(m.data) : p.reject(new Error(m.error));
+  };
+  worker.onerror = e => { for (const p of wpending.values()) p.reject(new Error("파이썬 엔진 오류: " + (e.message || "로딩 실패"))); wpending.clear(); };
+  return worker;
+}
 async function api(path, body) {
+  if (STATIC) {
+    return new Promise((resolve, reject) => {
+      const id = ++wseq;
+      wpending.set(id, { resolve, reject });
+      pyWorker().postMessage({ id, path, body });
+    });
+  }
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || j.detail?.error || j.detail || r.statusText);
   return j;
+}
+// Share links on the static site carry the whole input state in the URL: deflate + base64url.
+async function packState(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let out = bytes, tag = "j";
+  if (window.CompressionStream) {
+    out = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
+    tag = "d";
+  }
+  let bin = ""; out.forEach(b => (bin += String.fromCharCode(b)));
+  return tag + btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function unpackState(z) {
+  const tag = z[0], b64 = z.slice(1).replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64 + "===".slice((b64.length + 3) % 4));
+  let bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  if (tag === "d") bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 function schedule(delay = 500) {
   saveState();
@@ -97,10 +144,11 @@ window.ROUTES = ROUTES;
 async function route() {
   const [r0, qs] = (location.hash.replace("#/", "") || "sim").split("?");
   const r = ROUTES[r0] ? r0 : "sim";
-  const sid = new URLSearchParams(qs || "").get("s");
-  if (sid) {                                   // shared link: load that state, then drop the id from the URL
+  const params = new URLSearchParams(qs || "");
+  const sid = params.get("s"), z = params.get("z");
+  if (sid || z) {                              // shared link: load that state, then drop it from the URL
     try {
-      const got = await api("/api/share/" + encodeURIComponent(sid));
+      const got = z ? await unpackState(z) : await api("/api/share/" + encodeURIComponent(sid));
       if (got.page === "sim") { S.state = got.state; S.result = null; saveState(); }
       else if (got.page === "optimizer") { P2.state = got.state; P2.result = null; p2save(); }
       else if (got.page === "timeline") { P3.state = got.state; P3.seed = JSON.parse(JSON.stringify(got.state)); P3.result = null; p3save(); }
@@ -115,8 +163,9 @@ $("#share").onclick = async () => {
   const page = (location.hash.replace("#/", "") || "sim").split("?")[0];
   const state = { sim: () => S.state, optimizer: () => P2.state, timeline: () => P3.state }[page]?.() || S.state;
   try {
-    const { id } = await api("/api/share", { page: ROUTES[page] ? page : "sim", state });
-    const url = `${location.origin}${location.pathname}#/${page}?s=${id}`;
+    const pg = ROUTES[page] ? page : "sim";
+    const url = STATIC ? `${location.origin}${location.pathname}#/${pg}?z=${await packState({ page: pg, state })}`
+      : `${location.origin}${location.pathname}#/${pg}?s=${(await api("/api/share", { page: pg, state })).id}`;
     try { await navigator.clipboard.writeText(url); alert("링크를 복사했어요:\n" + url); } catch (e) { prompt("이 링크를 복사하세요", url); }
   } catch (e) { alert("공유 실패: " + e.message); }
 };
@@ -137,7 +186,7 @@ function renderSim() {
       <div id="tcards"></div>
       <div class="card" id="gcard"></div>
     </aside>
-    <main class="canvas" id="results"><div class="panel empty">데이터 받는 중… (처음 받는 종목은 수 초 걸림)</div></main>
+    <main class="canvas" id="results"><div class="panel empty">${STATIC ? "브라우저 안에서 파이썬 엔진을 준비 중… (처음 1회 10–30초, 이후 빠름)" : "데이터 받는 중… (처음 받는 종목은 수 초 걸림)"}</div></main>
   </div>`;
   bindSearch();
   renderTickerCards();
@@ -685,7 +734,17 @@ function panelRisk(t, P, R) {
 }
 
 // ------------------------------------------------------------------ boot
+if (STATIC) {
+  $("#refresh").title = "정적 사이트: 데이터는 평일 미국 장중에 GitHub Actions가 자동 갱신";
+}
 $("#refresh").onclick = async () => {
+  if (STATIC) {
+    try {
+      const st = await api("/api/status");
+      alert(`${st.refresh_note}\n\n스냅샷 기준(UTC): ${st.snapshot_asof || "-"}\n종목 ${st.tickers.length}개: ${st.tickers.join(", ")}`);
+    } catch (e) { alert(e.message); }
+    return;
+  }
   const b = $("#refresh"); b.disabled = true; b.textContent = "받는 중…";
   const onP2 = location.hash.includes("optimizer");
   try {

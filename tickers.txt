@@ -1,0 +1,38 @@
+# Tickers the GitHub Pages site carries. GitHub Actions refreshes these on US trading days.
+# One per line; add a line and push (or edit on github.com) to include a new ticker from the next refresh.
+# Information Technology
+AAPL
+MSFT
+NVDA
+AMD
+AVGO
+ORCL
+CRM
+MU
+PLTR
+# Communication Services
+META
+GOOGL
+NFLX
+DIS
+# Consumer Discretionary
+AMZN
+TSLA
+# Consumer Staples
+WMT
+COST
+# Financials
+JPM
+GS
+BAC
+COIN
+# Health Care
+LLY
+UNH
+JNJ
+# Energy
+XOM
+CVX
+# Industrials
+BA
+CAT

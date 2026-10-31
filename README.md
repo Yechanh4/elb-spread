@@ -9,7 +9,8 @@
 - [x] **3단계** — Page 1 완료 (FastAPI `app/`, `web/`, 비용 반영 K2, 6개 패널, 실데이터 브라우저 확인). 테스트 110개
 - [x] **4단계** — Page 2 역최적화 (`app/page2.py`, `web/page2.js`). 테스트 116개
 - [x] **5단계** — Page 3 타임라인, 내보내기, 공유 링크, 배포 설정, 런처. 테스트 123개
-- [x] **배포 준비** — Render blueprint(싱가포르, Starter+디스크), 선택적 Basic 인증, 경로 상한·계산 직렬화, 의존성 버전 고정, 메모리 최적화(종목 수 곡선 421→108MB)
+- [x] **GitHub Pages 배포** — 브라우저 내 파이썬(Pyodide) + Actions 데이터 갱신, 압축 공유 링크. 테스트 126개
+- [x] **배포 준비(대안)** — Render blueprint(싱가포르, Starter+디스크), 선택적 Basic 인증, 경로 상한·계산 직렬화, 의존성 버전 고정, 메모리 최적화(종목 수 곡선 421→108MB)
 
 ## 실행 (로컬)
 ```bash
@@ -24,23 +25,17 @@ make test                # 오프라인 테스트 123개 · make live = Yahoo/FR
 
 ## 실행 (호스팅 · 링크 공유)
 
-### Render 배포 (권장)
-1. **GitHub 저장소**: https://github.com/new 에서 `elb-spread`를 **Private**로, README·.gitignore 없이 빈 저장소로 만든다.
-2. **올리기** (이 폴더에서, 처음 한 번):
-   ```bash
-   git remote add origin https://github.com/<GitHub아이디>/elb-spread.git
-   git push -u origin main
-   ```
-   비밀번호를 물으면 GitHub 비밀번호가 아니라 **Personal Access Token**(Settings → Developer settings → Fine-grained token, 이 저장소 Contents: Read and write)을 넣는다. GitHub Desktop으로 올려도 된다.
-3. **Render**: https://dashboard.render.com → New → **Blueprint** → GitHub 연결 → `elb-spread` 선택 → `render.yaml`을 읽어 서비스 1개 + 디스크 1GB 생성.
-   - `ELB_BASIC_AUTH`에 `아이디:비밀번호`를 넣는다 (넣지 않으면 URL을 아는 누구나 접속·계산 가능). 브라우저가 처음에 로그인 창을 띄움.
-   - `ECOS_API_KEY`는 선택(없으면 국고채 2년 3.76% 가정값 → 화면에서 수정).
-   - 플랜: Starter(512MB, 약 $7/월) + 디스크 1GB. 실측 최대 메모리 ~260MB/계산, 계산은 한 번에 하나씩 줄 세움, 경로 수 상한 20,000(`ELB_MAX_PATHS`).
-4. **배포 후**: 처음 접속하면 종목 데이터를 받는다. **미국 장중(22:30–05:00 KST)에 한 번 열어** 체인을 받아두면 이후엔 캐시 + 평일 15:30 뉴욕 자동 갱신.
-5. 이후 수정은 `git push`만 하면 Render가 자동 재배포.
+### GitHub Pages (현재 배포 방식 — 무료, 서버 없음)
+멤버는 링크만 열면 됨(설치·로그인 없음). 저장소와 사이트는 **공개**.
+- **계산**: 같은 파이썬 코드(core/ app/ data/)를 브라우저 안에서 Pyodide로 실행 (`web/worker.js`, `app/static_api.py`). 처음 열 때 파이썬 엔진 약 20MB를 받느라 10–30초, 이후 Page 1 ~1초 · Page 2 ~15초 · Page 3(2만 경로) ~1초.
+- **데이터**: `.github/workflows/pages.yml`이 **평일 18:45 UTC(뉴욕 장중)** 에 `tickers.txt`의 종목을 Yahoo/FRED에서 받아 `site/data/market.sqlite`로 함께 배포. 매번 **직전 배포본의 데이터에서 시작**하므로 GitHub 서버가 Yahoo에 막혀도 데이터가 사라지지 않고(STALE 표시), 첫 배포는 `seed/market.sqlite`(로컬에서 받은 장중 스냅샷)로 시작.
+- **종목 추가**: `tickers.txt`에 한 줄 추가 → push(또는 github.com에서 파일 편집) → 다음 갱신 때 반영. 목록에 없는 종목은 "tickers.txt에 없음"으로 안내.
+- **공유 링크**: 입력 전체를 압축해 링크에 넣음(`#/<페이지>?z=…`, 서버 저장 없음).
+- **수동 갱신**: GitHub 저장소 → Actions → "Build and deploy site" → Run workflow (장중에 누르면 최신 호가). ECOS 국고채 키는 Settings → Secrets → `ECOS_API_KEY`(선택).
+- 로컬에서 정적 사이트 확인: `python -m tools.build_site && python3 -m http.server 8781 --directory site`.
+- 처음 한 번만: 저장소 Settings → Pages → Source를 **GitHub Actions**로.
 
-무료 플랜으로 쓰려면 `render.yaml`에서 `plan: free`로 바꾸고 `disk` 블록과 `ELB_DB`를 지운다. 대신 15분 유휴 시 잠들고(첫 접속 ~1분), 재시작·재배포 때 캐시와 공유 링크가 사라지며, 잠든 동안엔 예정 갱신도 안 돈다.
-
+### Render (서버 방식, 유료 — 대안)
 ### 그 밖의 호스팅
 - **Fly.io**: `fly launch --no-deploy --copy-config && fly volumes create elb_data --size 1 && fly deploy` (`fly.toml`).
 - **Docker 직접**: `make docker`. ※ 이 맥에는 Docker가 없어 이미지 빌드는 Render에서 처음 검증됨(Dockerfile이 복사하는 파일만으로 앱이 뜨는 건 로컬에서 확인).

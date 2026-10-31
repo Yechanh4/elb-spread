@@ -1,0 +1,69 @@
+name: Build and deploy site
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 18:45 UTC = 14:45 New York in summer (EDT), 13:45 in winter (EST): inside the US session, so option
+    # quotes are live. GitHub may start scheduled runs late; there is still >1h before the 16:00 close.
+    - cron: "45 18 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Start from the deployed snapshot (data survives even if Yahoo refuses this runner)
+        run: |
+          mkdir -p data
+          url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/data/market.sqlite"
+          if curl -fsSL "$url" -o data/market.sqlite; then echo "restored $url"; else cp seed/market.sqlite data/market.sqlite; echo "first deploy: using seed/market.sqlite"; fi
+      - name: Refresh from Yahoo/FRED (scheduled or manual runs) and build site/
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            python -m tools.build_site
+          else
+            python -m tools.build_site --refresh
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

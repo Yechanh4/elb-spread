@@ -10,3 +10,5 @@ ruvector.db
 .claude-flow/
 .swarm/
 *.png
+site/
+site-work.sqlite
