@@ -55,20 +55,50 @@ class SnapshotMacro(MacroProvider):
 
 
 _svc = None
+_index = dict(tickers={}, screener=dict(rows=[], errors={}, asof=None), generated=None)
+SCREENER_SHOW = 60
 
 
-def service(db_path="/data/market.sqlite", reset=False):
+def service(db_path="/data/core.sqlite", reset=False):
     global _svc
     if _svc is None or reset:
         cache = Cache(db_path)
-        _svc = MarketDataService(cache, SnapshotProvider(cache.keys("info")), SnapshotMacro())
+        known = set(_index["tickers"]) or set(cache.keys("info"))
+        _svc = MarketDataService(cache, SnapshotProvider(known), SnapshotMacro())
     return _svc
+
+
+def set_index(index_json):
+    """index.json: the site's ticker universe (and the build-time screener). Call before service()."""
+    global _index, _svc
+    _index = json.loads(index_json)
+    if _svc is not None:
+        _svc.provider.known = set(_index["tickers"])
+
+
+def needed_tickers(path, body_json):
+    """JSON list of the known tickers a request will read, so the worker can fetch their files first."""
+    body = json.loads(body_json) if body_json else {}
+    key = {"/api/page1": "tickers", "/api/page2": "candidates", "/api/page3": "tickers",
+           "/api/screener": "tickers"}.get(urlparse(path).path)
+    items = (body.get(key) or []) if key else []
+    return json.dumps(sorted({(x["ticker"] if isinstance(x, dict) else x).upper() for x in items}
+                             & set(_index["tickers"])))
+
+
+def load_ticker(ticker_json):
+    """Insert one ticker's snapshot rows (site/data/t/<T>.json) into the in-memory cache."""
+    d = json.loads(ticker_json)
+    svc = service()
+    with svc.cache._lock:
+        svc.cache.db.executemany("INSERT OR REPLACE INTO snapshots VALUES (?,?,?,?,?)", [tuple(r) for r in d["rows"]])
+        svc.cache.db.commit()
+    return d["ticker"]
 
 
 def status(svc):
     st = svc.status()
-    row = svc.cache.db.execute("SELECT MAX(fetched_at) FROM snapshots WHERE kind='chain'").fetchone()
-    st.update(static=True, snapshot_asof=row[0] if row else None, tickers=svc.cache.keys("info"),
+    st.update(static=True, snapshot_asof=_index.get("generated"), tickers=sorted(_index["tickers"]),
               refresh_note=REFRESH_NOTE, scheduler_running=False, next_refresh=None)
     return st
 
@@ -84,8 +114,10 @@ def dispatch(path, body_json):
             out = status(svc)
         elif p == "/api/search":
             q = (parse_qs(u.query).get("q") or [""])[0].strip().upper()
-            out = [dict(symbol=t, name=(svc.cache.latest("info", t) or {}).get("payload", {}).get("name", ""),
-                        source="snapshot") for t in svc.cache.keys("info") if t.startswith(q)][:10] if q else []
+            idx = _index["tickers"]
+            hits = [t for t in sorted(idx) if t.startswith(q)] + [t for t in sorted(idx) if q and not t.startswith(q)
+                                                                  and q in idx[t]["name"].upper()]
+            out = [dict(symbol=t, name=idx[t]["name"], source="snapshot") for t in hits[:10]] if q else []
         elif p == "/api/page1":
             out = run_page1(body, svc)
         elif p == "/api/page2":
@@ -93,11 +125,18 @@ def dispatch(path, body_json):
         elif p == "/api/page3":
             out = run_page3(body, svc)
         elif p == "/api/screener":
-            mac = svc.macros()
-            r_usd = mac["ust_3m"].value["value"] if mac.get("ust_3m") else 0.04
-            rows, errors = run_screener(svc, [t.upper() for t in body.get("tickers") or []] or svc.cache.keys("info"), r_usd)
-            out = dict(rows=rows, errors=errors, note="IV rank is a proxy: today's ATM IV within the last year of "
-                                                      "21-day realized vol (free data has no implied-vol history)")
+            note = ("IV rank is a proxy: today's ATM IV within the last year of 21-day realized vol "
+                    "(free data has no implied-vol history)")
+            if body.get("tickers"):
+                mac = svc.macros()
+                r_usd = mac["ust_3m"].value["value"] if mac.get("ust_3m") else 0.04
+                rows, errors = run_screener(svc, [t.upper() for t in body["tickers"]], r_usd)
+                out = dict(rows=rows, errors=errors, note=note)
+            else:                                   # whole universe: precomputed at build time
+                scr = _index["screener"]
+                out = dict(rows=scr["rows"][:SCREENER_SHOW], errors={}, total=len(scr["rows"]),
+                           asof=scr.get("asof"), note=note + f"; whole universe ranked at build time "
+                           f"({len(scr['rows'])} tickers), cheapest {SCREENER_SHOW} shown")
         elif p == "/api/refresh":
             out = dict(error=REFRESH_NOTE)
         else:

@@ -30,11 +30,14 @@ make test                # 오프라인 테스트 123개 · make live = Yahoo/FR
 ### GitHub Pages (현재 배포 방식 — 무료, 서버 없음)
 멤버는 링크만 열면 됨(설치·로그인 없음). 저장소와 사이트는 **공개**.
 - **계산**: 같은 파이썬 코드(core/ app/ data/)를 브라우저 안에서 Pyodide로 실행 (`web/worker.js`, `app/static_api.py`). 처음 열 때 파이썬 엔진 약 20MB를 받느라 10–30초, 이후 Page 1 ~1초 · Page 2 ~15초 · Page 3(2만 경로) ~1초.
-- **데이터**: `.github/workflows/pages.yml`이 **평일 18:45 UTC(뉴욕 장중)** 에 `tickers.txt`의 종목을 Yahoo/FRED에서 받아 `site/data/market.sqlite`로 함께 배포. 매번 **직전 배포본의 데이터에서 시작**하므로 GitHub 서버가 Yahoo에 막혀도 데이터가 사라지지 않고(STALE 표시), 첫 배포는 `seed/market.sqlite`(로컬에서 받은 장중 스냅샷)로 시작.
-- **종목 추가**: `tickers.txt`에 한 줄 추가 → push(또는 github.com에서 파일 편집) → 다음 갱신 때 반영. 목록에 없는 종목은 "tickers.txt에 없음"으로 안내.
+- **데이터**: `.github/workflows/pages.yml`이 **평일 18:45 UTC(뉴욕 장중)** 에 `tickers.txt`의 종목(S&P 500 + 나스닥 100 + 옵션 거래 많은 종목, 544개)을 **8갈래로 나눠 동시에** Yahoo/FRED에서 받음(갈래당 ~5분). 매번 **직전 배포본의 전체 데이터(`data/full.sqlite.gz`)에서 시작해 새로 받은 것만 덮어쓰므로**, 일부 종목이나 갈래 전체가 Yahoo에 막혀도 그 종목은 이전 데이터가 유지됨(STALE 표시). 첫 배포는 `seed/market.sqlite`.
+- **브라우저는 쓰는 종목만 받음**: 종목마다 `data/t/<티커>.json`(압축 약 25KB)이 따로 있고, 입력한 종목만 그때 받음. 시작 때는 매크로(`core.sqlite`)와 종목 목록(`index.json`)만.
+- **스크리너**: 전체 종목의 IV−HV·IV 순위를 데이터 갱신 때 미리 계산해 `index.json`에 넣음 → Page 2 "전체 종목 스크리닝"이 즉시 상위 60개를 보여줌.
+- **종목 추가**: github.com에서 `tickers.txt`에 한 줄 추가 후 Commit → 그 커밋이 바로 갱신을 돌림(장외면 직전 종가 호가, `off-hours` 표시). 목록에 없는 종목은 "tickers.txt에 없음"으로 안내.
+- **한계**: 저변동·저가 종목은 3개월물 상장 행사가가 K1 목표(+1.56σ̂)까지 안 올라가서 구조를 못 만들 수 있음(사유 표시). 장 마감 후 호가는 스프레드가 넓어 유동성 필터에 더 많이 걸림 → 평일 장중 갱신이 기준.
 - **공유 링크**: 입력 전체를 압축해 링크에 넣음(`#/<페이지>?z=…`, 서버 저장 없음).
 - **수동 갱신**: GitHub 저장소 → Actions → "Build and deploy site" → Run workflow (장중에 누르면 최신 호가). ECOS 국고채 키는 Settings → Secrets → `ECOS_API_KEY`(선택).
-- 로컬에서 정적 사이트 확인: `python -m tools.build_site && python3 -m http.server 8781 --directory site`.
+- 로컬에서 정적 사이트 확인: `python -m tools.build_site site && python3 -m http.server 8781 --directory site`. 갱신 한 갈래만: `python -m tools.build_site refresh --db s.sqlite --shard 0/8`.
 - 처음 한 번만: 저장소 Settings → Pages → Source를 **GitHub Actions**로.
 
 ### Render (서버 방식, 유료 — 대안)

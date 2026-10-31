@@ -53,10 +53,14 @@ def screener_row(svc, ticker, r_usd):
     closes = np.array(b.history.value["close"])
     hv1y = hv_close_to_close(closes, 252)
     exps = []
-    for e, it in b.chains.items():
+    # nearest to 3 months first; the first one whose q passes is what pick_expiry would choose anyway
+    order = sorted(b.chains, key=lambda e: abs((date.fromisoformat(e) - b.asof_date).days / 365 - 0.25))
+    for e in order:
         try:
-            cs, md, _ = density_for(it, S0, r_usd, d, b.asof_date)
+            cs, md, _ = density_for(b.chains[e], S0, r_usd, d, b.asof_date)
             exps.append(dict(expiry=e, T=cs.T, q_pass=bool(md.passed), iv_atm=md.iv_atm))
+            if md.passed:
+                break
         except Exception as ex:  # noqa: BLE001
             exps.append(dict(expiry=e, T=(date.fromisoformat(e) - b.asof_date).days / 365, q_pass=False,
                              iv_atm=None, error=str(ex)))
