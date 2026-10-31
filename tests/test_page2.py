@@ -70,3 +70,13 @@ def test_band_warning_and_screener(svc):
     rows, err = run_screener(svc, ["AAA", "BBB", "DDD"], 0.04)
     assert [r["iv_minus_hv"] for r in rows] == sorted(r["iv_minus_hv"] for r in rows)
     assert all(0 <= r["iv_rank_proxy"] <= 1 for r in rows) and not err
+
+
+def test_infeasible_sector_mix_is_explained_not_raised(svc):
+    SPEC.update({"T1": ("Information Technology", 0.60, 0.45, 500), "T2": ("Information Technology", 0.60, 0.45, 500)})
+    o = run_page2(state(candidates=[dict(ticker=t) for t in ("AAA", "T1", "T2")]), svc)   # three IT names, max 2/sector
+    assert "섹터당 최대 2개" in o["error"] and "Information Technology 3개" in o["error"]
+    assert o["infeasible"]["by_sector"]["Information Technology"] == ["AAA", "T1", "T2"]
+    assert len(o["candidates"]) == 3 and "picks" not in o                  # candidate table still shown
+    ok = run_page2(state(candidates=[dict(ticker=t) for t in ("AAA", "T1", "BBB")]), svc)
+    assert "error" not in ok and ok["picks"]

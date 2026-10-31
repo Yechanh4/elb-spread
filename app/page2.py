@@ -12,7 +12,7 @@ import numpy as np
 
 from core import budget as bud
 from core.density import mixture, subjective_density
-from core.optimize import Evaluator, scenario_table, sensitivity, solve, ticker_count_curve
+from core.optimize import Evaluator, feasible_subsets, scenario_table, sensitivity, solve, ticker_count_curve
 from core.selection import edge
 from core.simulate import Marginal, SimConfig, TickerSpec, correlation_from_prices
 from core.structure import liquid, select_k2
@@ -242,10 +242,20 @@ def run_page2(state, svc):
             extras.append(ser[2])
     k_min = min(cons["k_min"], len(specs))
     if len(specs) < max(1, cons["k_min"]):
-        warnings.append(f"{len(specs)} eligible candidate(s): fewer than the minimum {cons['k_min']} — "
-                        f"solving with what is eligible")
+        warnings.append(f"계산에 쓸 수 있는 후보가 {len(specs)}개로 '종목 수 최소 {cons['k_min']}'보다 적음 — 있는 것만으로 계산함")
     if not specs:
-        out["error"] = "no eligible candidate (see the candidate list for reasons)"
+        out["error"] = "계산에 쓸 수 있는 후보가 없음 — 후보 표의 '제외' 사유를 확인해줘."
+        return jsonable(out)
+    k_lo, k_hi = max(1, k_min), min(cons["k_max"], len(specs))
+    if not feasible_subsets(specs, k_lo, k_hi, cons["max_per_sector"]):
+        by_sector = {}
+        for sp in specs:
+            by_sector.setdefault(sp.sector or "?", []).append(sp.name)
+        detail = ", ".join(f"{sec} {len(v)}개({'·'.join(v)})" for sec, v in sorted(by_sector.items(), key=lambda kv: -len(kv[1])))
+        out["error"] = (f"조합을 만들 수 없음: 유효 후보 {len(specs)}개의 섹터가 {detail}인데, 제약이 '최소 {k_lo}종목 · "
+                        f"섹터당 최대 {cons['max_per_sector']}개'라서 만족하는 조합이 없음. 다른 섹터 종목을 후보에 추가하거나 "
+                        f"'섹터당 최대'를 올리거나 '종목 수 최소'를 낮춰줘.")
+        out["infeasible"] = dict(by_sector=by_sector, k_min=k_lo, k_max=k_hi, max_per_sector=cons["max_per_sector"])
         return jsonable(out)
     C = np.eye(1) if len(specs) == 1 else correlation_from_prices(aligned_closes(series))
     scen_objs = tuple(bud.RateScenario(s["name"], s["shift_bp"] / 1e4, float(s["prob"])) for s in scen)

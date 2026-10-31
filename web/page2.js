@@ -121,7 +121,8 @@ function p2CandInfo() {
 function p2Screener() {
   const S2 = P2.screener;
   $("#p2screen").innerHTML = `<h2>스크리너 <button class="btn" id="p2scr" style="margin-left:auto">${STATIC ? "전체 종목 스크리닝" : "워치리스트 스크리닝"}</button></h2>
-    <div class="sub">옵션이 싼 순: (ATM IV − HV 1y) 오름차순, 그다음 IV 순위(proxy) 오름차순.${S2 && S2.total ? ` 전체 ${S2.total}개 중 상위 ${S2.rows.length}개 (데이터 갱신 때 미리 계산).` : ""}</div>
+    <div class="sub">옵션이 싼 순: (ATM IV − HV 1y) 오름차순, 그다음 IV 순위(proxy) 오름차순.${S2 && S2.total ? ` 전체 ${S2.total}개 중 상위 ${S2.rows.length}개만 표시 (데이터 갱신 때 미리 계산). 목록에 없어도 위 후보 칸에 티커를 치면 S&P 500·나스닥 100 등 사이트의 모든 종목을 넣을 수 있음.` : ""}
+      섹터당 최대 개수 제약이 있으니 섹터를 섞어서 추가해줘.</div>
     ${S2 ? `<div class="scroll"><table class="t"><tr><th>종목</th><th>IV−HV</th><th data-tip="${esc(S2.note)}">IV 순위*</th><th>섹터</th><th></th></tr>
       ${S2.rows.map(r => `<tr><td>${esc(r.ticker)}${r.stale ? ' <span class="badge bad">STALE</span>' : ""}</td><td>${mdl((r.iv_minus_hv >= 0 ? "+" : "") + pct(r.iv_minus_hv))}</td>
         <td>${mdl(pct(r.iv_rank_proxy, 0))}</td><td class="sub">${esc(r.sector)}</td>
