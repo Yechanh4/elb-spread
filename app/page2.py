@@ -18,6 +18,7 @@ from core.simulate import Marginal, SimConfig, TickerSpec, correlation_from_pric
 from core.structure import liquid, select_k2
 from core.vol import hv_close_to_close, iv_rank_proxy, screen
 from data.service import DataUnavailable
+from data.trading_days import quote_label
 
 from .page1 import aligned_closes, density_for, jsonable, pick_expiry
 
@@ -139,6 +140,7 @@ def prepare(svc, cand, names, probs, g, cons, B0, fx, r_usd):
                 K1=sp.K1, K2=sp.K2, net_mid=sp.net_mid, rt_cost=sp.rt_cost, net_cost=sp.net_cost,
                 payoff_multiple=sp.payoff_multiple, breakeven_pct=sp.breakeven_pct, liquidity_ok=sp.liquidity_ok,
                 quote_session=b.chains[chosen].value.get("session"),
+                quote_label=quote_label(b.chains[chosen].fetched_at, b.chains[chosen].value.get("session")),
                 liquidity_offhours=off_hours and liquid(sp, False) and not sp.liquidity_ok,
                 narrowest_K2=sel["narrowest"].K2, narrowest_rt=sel["narrowest"].rt_cost,
                 e_multiple={s: expected_roll_multiple(marg[s], sp.k1, sp.k2, sp.cost_rel) for s in names},

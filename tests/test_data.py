@@ -371,3 +371,14 @@ def test_off_hours_empty_chain_is_refused_and_cache_kept(svc):
     assert svc.cache.latest("chain", "AAA|2027-01-15")["fetched_at"] == good["fetched_at"]   # nothing cached
     nb = svc.ticker_bundle("NEW")                             # no regular-session cache: reported, not hidden
     assert nb.chains == {} and any("off-hours" in v for v in nb.errors.values())
+
+
+def test_valuation_date_is_last_trading_day():
+    s = MarketDataService(Cache(":memory:"), FakeProvider(), FakeMacro(), RefreshSchedule(),
+                          Clock(datetime(2026, 10, 31, 15, 0, tzinfo=UTC)))           # Saturday
+    assert s.asof_date() == date(2026, 10, 30)
+    s.clock.t = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)                               # Monday 07:00 NY, pre-open
+    assert s.asof_date() == date(2026, 10, 30)
+    s.clock.t = datetime(2026, 11, 26, 18, 0, tzinfo=UTC)                              # Thanksgiving
+    assert s.asof_date() == date(2026, 11, 25)
+    assert pv.us_session(datetime(2026, 11, 26, 16, 0, tzinfo=UTC)) == "off-hours"    # holiday: no session

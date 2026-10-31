@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PY_FILES = (["core/*.py"] + [f"app/{n}.py" for n in ("__init__", "page1", "page2", "page3", "share", "static_api")]
-            + [f"data/{n}.py" for n in ("__init__", "cache", "service", "providers")])
+            + [f"data/{n}.py" for n in ("__init__", "cache", "service", "providers", "trading_days")])
 TICKER_KINDS = ("info", "history", "expiries", "events")
 
 

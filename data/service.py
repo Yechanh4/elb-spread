@@ -151,7 +151,10 @@ class MarketDataService:
     # ------------------------------------------------------------ tickers
 
     def asof_date(self):
-        return self.clock().astimezone(NY).date()
+        """Valuation date = the last trading day (today during or after a session; on a weekend, holiday or
+        before the open, the previous trading day), so time to expiry and rule dates match the quotes."""
+        from .trading_days import market_date
+        return market_date(self.clock())
 
     def ticker_bundle(self, ticker, refresh=False, n_expiries=3, min_days=60):
         T = ticker.upper()

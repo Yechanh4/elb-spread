@@ -297,7 +297,8 @@ function updateCardFacts() {
       <div><span>HV 1y</span> ${mdl(pct(md.hv.hv1y), "2년 일봉 종가 로그수익률 표준편차 (최근 252일) — 과거 데이터로 계산한 값")}</div>
       <div><span>ATM IV</span> ${mdl(pct(md.iv_atm), "선택 만기 체인을 SVI로 맞춘 뒤 선도가격에서 읽은 IV (시장 호가에서 도출)")}</div>
       <div><span>배당</span> ${mkt(pct(m.div_yield, 2), "최근 12개월 현금배당 / 현물")}</div>
-      <div><span>Parkinson</span> ${mdl(pct(md.hv.parkinson_1y), "고가·저가 범위 추정 변동성 (1y)")}</div>`;
+      <div><span>Parkinson</span> ${mdl(pct(md.hv.parkinson_1y), "고가·저가 범위 추정 변동성 (1y)")}</div>
+      <div style="grid-column:1/-1"><span>옵션 호가</span> ${mkt(esc(b.quote_label || "-"), "이 종목 체인을 받은 거래일. 장 마감 후·주말에 받으면 그 거래일의 종가 호가")}</div>`;
     const sel = $("#texp" + i);
     sel.innerHTML = `<option value="">자동 (${esc(b.chosen_expiry)})</option>` + b.expiries.map(x =>
       `<option value="${x.expiry}" ${t.expiry === x.expiry ? "selected" : ""}>${x.expiry} · ${(x.T * 365).toFixed(0)}일 · q ${x.q_pass ? "✓" : "✕"}</option>`).join("");
@@ -316,7 +317,7 @@ function updateCardFacts() {
     $("#tcatout" + i).innerHTML = co;
     $("#tqfail" + i).innerHTML = (md.q_pass ? "" : `<div class="note alert">q 추출 검증 실패 — 기본은 시뮬레이션 제외.
       <label><input type="checkbox" data-t="${i}" data-k="use_failed_q" ${t.use_failed_q ? "checked" : ""}> 그래도 사용</label></div>`)
-      + (md.liquidity_offhours ? `<div class="note">장 마감 후 호가라 호가폭 기준은 보류하고 OI만 확인함 — 비용은 넓은 장외 호가로 계산돼 보수적. 주문 전 장중 호가로 재확인.</div>` : "")
+      + (md.liquidity_offhours ? `<div class="note">마지막 거래일 종가 호가라(장 마감 후 호가는 장중보다 매수·매도 차이가 넓음) 호가폭 기준은 보류하고 OI만 확인함 — 비용은 그 넓은 호가로 계산돼 보수적. 주문 전 장중 호가로 재확인.</div>` : "")
       + (md.spread.liquidity_ok || md.liquidity_offhours ? "" : `<div class="note alert">유동성 필터 미달 (OI ≥ 100, 다리 호가 ≤ mid의 10%) — 기본은 제외.
       <label><input type="checkbox" data-t="${i}" data-k="use_illiquid" ${t.use_illiquid ? "checked" : ""}> 그래도 사용</label></div>`)
       + (b.in_simulation ? "" : `<div class="note">시뮬레이션 제외: ${esc(b.excluded_reason)}</div>`);
@@ -413,7 +414,9 @@ function renderResults() {
 function updateHeader(R) {
   const ts = R.tickers.map(b => b.data_asof).filter(Boolean).sort();
   const stale = R.tickers.some(b => b.stale) || Object.values(R.macro).some(m => m && m.stale);
-  $("#asof").innerHTML = `데이터 기준: <b>${ts.length ? new Date(ts[0]).toLocaleString("ko-KR") : "-"}</b> · 오늘 ${R.status.today} (뉴욕)`;
+  const labels = [...new Set(R.tickers.map(b => b.quote_label).filter(Boolean))];
+  $("#asof").innerHTML = `<span data-tip="받은 시각: ${ts.length ? new Date(ts[0]).toLocaleString("ko-KR") : "-"} (Yahoo, 15~20분 지연)">데이터: <b>${labels.length ? labels.join(" / ") : "-"}</b> 기준</span>
+    · <span data-tip="만기까지 기간·만기 선택·운용규칙 날짜의 기준. 주말·휴장일·개장 전에는 직전 거래일">평가 기준일 ${R.status.valuation_date || R.status.today}</span>`;
   $("#stale").innerHTML = stale ? `<span class="badge bad" data-tip="갱신에 실패해 캐시를 보여주는 항목이 있음. 각 카드의 상세를 확인.">STALE</span>` : `<span class="badge good">최신</span>`;
   $("#delay").textContent = " · " + R.status.delay_note + " 자동 갱신: " + R.status.schedule;
 }
@@ -448,7 +451,7 @@ function structureTable(t) {
       <td>${mdl(int(sp.n_int))}</td><td>${mdl(won(sp.max_payoff_krw))}</td><td>${mdl(num(sp.payoff_multiple, 1) + "×")}</td>
       <td>${mdl("$" + num(sp.breakeven))}</td><td>${mdl("+" + pct(sp.breakeven_pct))}</td>
       <td>${int(sp.c1.oi)}/${int(sp.c2.oi)}</td><td>${pct(sp.c1.spread_pct)}/${pct(sp.c2.spread_pct)}</td>
-      <td>${(!alt && b.model.liquidity_offhours) ? `<span class="badge warn" data-tip="장 마감 후(주말 포함) Yahoo 호가는 장중보다 매수·매도 차이가 훨씬 넓어서 호가폭 10% 기준은 판정하지 않고 OI(미결제약정)만 확인함. 비용은 그 넓은 호가로 계산돼 결과가 보수적. 실제 주문 전 장중 호가로 다시 확인.">! 장외: OI만</span>` : statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
+      <td>${(!alt && b.model.liquidity_offhours) ? `<span class="badge warn" data-tip="마지막 거래일 종가 호가(장 마감 후 받은 호가)는 장중보다 매수·매도 차이가 훨씬 넓어서 호가폭 10% 기준은 판정하지 않고 OI(미결제약정)만 확인함. 비용은 그 넓은 호가로 계산돼 결과가 보수적. 실제 주문 전 장중 호가로 다시 확인.">! 종가 호가: OI만</span>` : statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
       <td>${mdl(num(sp.target_ratio, 1))}</td></tr>`;
   };
   return `<table class="t">${head}${t.map((b, i) => {
@@ -722,7 +725,7 @@ function panelRisk(t, P, R) {
       <td>${md.close_by} <span class="sub" data-tip="R-1: 만기 2영업일 전 시장 청산. 만기까지 ${md.bdays_to_expiry}영업일">(${md.bdays_to_close}영업일 남음)</span></td>
       <td>${xd.length ? xd.map(e => e.date + (e.projected ? " (추정)" : "")).join(", ") : "없음"}</td>
       <td>${bad.length ? bad.map(x => `<span class="badge bad">${esc(x.name)} ${x.date}</span>`).join(" ") : statusBadge("pass", "OK")}</td>
-      <td>${md.liquidity_offhours ? `<span class="badge warn" data-tip="장 마감 후(주말 포함) Yahoo 호가는 장중보다 매수·매도 차이가 훨씬 넓어서 호가폭 10% 기준은 판정하지 않고 OI(미결제약정)만 확인함. 비용은 그 넓은 호가로 계산돼 결과가 보수적. 실제 주문 전 장중 호가로 다시 확인.">! 장외: OI만</span>` : statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
+      <td>${md.liquidity_offhours ? `<span class="badge warn" data-tip="마지막 거래일 종가 호가(장 마감 후 받은 호가)는 장중보다 매수·매도 차이가 훨씬 넓어서 호가폭 10% 기준은 판정하지 않고 OI(미결제약정)만 확인함. 비용은 그 넓은 호가로 계산돼 결과가 보수적. 실제 주문 전 장중 호가로 다시 확인.">! 종가 호가: OI만</span>` : statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
       <td><div class="rules">${md.rules.map(r => `<span data-tip="${esc(r.message)}">${statusBadge(r.status, r.code)}</span>`).join("")}</div></td></tr>`;
   }).join("");
   const notes = Object.values(R.notes).map(n => `<div class="note">${esc(n)}</div>`).join("");

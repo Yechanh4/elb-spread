@@ -31,11 +31,10 @@ class ProviderError(RuntimeError):
 
 
 def us_session(now=None):
-    """'regular' during NYSE hours (Mon-Fri 9:30-16:00 New York), else 'off-hours'. Off-hours option
+    """'regular' during NYSE hours (trading days 9:30-16:00 New York, holidays excluded), else 'off-hours'. Off-hours option
     quotes are frozen or pulled; spreads look far wider than what trades."""
-    now = (now or datetime.now(timezone.utc)).astimezone(NY)
-    regular = now.weekday() < 5 and (9, 30) <= (now.hour, now.minute) <= (16, 0)
-    return "regular" if regular else "off-hours"
+    from .trading_days import in_session
+    return "regular" if in_session(now) else "off-hours"
 
 
 def select_monthly_expiries(expiries, asof, min_days=60, n=3):

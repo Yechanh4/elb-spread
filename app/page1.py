@@ -22,6 +22,7 @@ from core.spread import build_spread, return_decomposition
 from core.structure import liquid, select_k2
 from core.vol import catalyst_sigma, catalyst_timing, hv_close_to_close, hv_parkinson, priced_in_check
 from data.providers import DELAY_NOTE
+from data.trading_days import WEEKDAY_KO, quote_label
 from data.service import DataUnavailable, chain_slice
 
 DEFAULT_GLOBALS = dict(
@@ -207,6 +208,7 @@ def ticker_block(svc, tk, g, B0, fx, r_usd, n_tickers, today):
     cs, md, dropped = density_for(b.chains[chosen], S0, r_usd, d, b.asof_date)
     session = b.chains[chosen].value.get("session")
     off_hours = session == "off-hours"
+    res["quote_label"] = quote_label(b.chains[chosen].fetched_at, session)
     cat = catalyst_block(svc, b, tk, chosen, md.iv_atm, S0, r_usd, d, hv1y)
     if tk.get("use_catalyst") and cat["sigma_hat"]:
         sigma_hat, sig_src = cat["sigma_hat"], "catalyst calculator"
@@ -317,7 +319,8 @@ def run_page1(state, svc):
     rates, budgets = bud.cycle_budgets(g["r"], g["rate_shift"], bud.N_CYCLES, g["V_deposit"], g["V_own_rental"], g["T"])
     B0 = float(budgets[0])
     out = dict(
-        status=dict(delay_note=DELAY_NOTE, schedule=svc.schedule.describe(), today=today.isoformat()),
+        status=dict(delay_note=DELAY_NOTE, schedule=svc.schedule.describe(), today=today.isoformat(),
+                    valuation_date=f"{today.isoformat()}({WEEKDAY_KO[today.weekday()]})"),
         macro={k: (v.meta() | dict(value=v.value["value"], observed=v.value.get("observed"))) if v is not None else None
                for k, v in mac.items() if not k.endswith("_error")},
         macro_errors={k: v for k, v in mac.items() if k.endswith("_error")},

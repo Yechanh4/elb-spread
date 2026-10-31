@@ -196,9 +196,9 @@ function p2render() {
       ${R.candidates.map(c => c.K1 ? `<tr><td>${esc(c.ticker)}</td><td class="sub">${esc(c.sector)}</td><td>${pct(c.iv_atm)}</td><td>${mdl(pct(c.hv1y))}</td>
         ${R.scenarios.map(s => `<td>${mdl(pct(c.sigma[s.name]))}</td>`).join("")}
         <td>${statusBadge(c.edge_mix > 0 ? "pass" : "fail", (c.edge_mix >= 0 ? "+" : "") + pct(c.edge_mix))}</td>
-        <td>${num(c.K1, 1)}/${num(c.K2, 1)}</td><td>${mdl(pct(c.rt_cost, 0))}</td>
+        <td data-tip="옵션 호가: ${esc(c.quote_label || "-")}">${num(c.K1, 1)}/${num(c.K2, 1)}</td><td>${mdl(pct(c.rt_cost, 0))}</td>
         ${R.scenarios.map(s => `<td>${mdl(num(c.e_multiple[s.name], 3))}</td>`).join("")}<td>${mdl(num(c.kl_mix, 3))}</td>
-        <td>${c.eligible ? statusBadge("pass", "포함") : `<span data-tip="${esc(c.reason)}">${statusBadge("fail", "제외")}</span>`}${c.sigma_placeholder ? ' <span class="badge warn" data-tip="리서치 σ̂ 없음: HV 1y 자리표시">σ̂ 자리표시</span>' : ""}${c.liquidity_offhours ? ' <span class="badge warn" data-tip="장 마감 후 호가: 호가폭 기준 보류, OI만 확인. 비용은 넓은 호가로 계산(보수적)">장외: OI만</span>' : ""}</td></tr>`
+        <td>${c.eligible ? statusBadge("pass", "포함") : `<span data-tip="${esc(c.reason)}">${statusBadge("fail", "제외")}</span>`}${c.sigma_placeholder ? ' <span class="badge warn" data-tip="리서치 σ̂ 없음: HV 1y 자리표시">σ̂ 자리표시</span>' : ""}${c.liquidity_offhours ? ` <span class="badge warn" data-tip="${esc(c.quote_label || "")}: 장 마감 후 호가라 호가폭 기준 보류, OI만 확인. 비용은 넓은 호가로 계산(보수적)">종가 호가: OI만</span>` : ""}</td></tr>`
         : `<tr><td>${esc(c.ticker)}</td><td colspan="20">${statusBadge("fail", "제외")} ${esc(c.reason)}</td></tr>`).join("")}</table></div></section>
     ${R.error ? `<section class="panel banner">${esc(R.error)}</section>` : `
     <section class="panel"><h2>① 트레이드오프 — 목표확률 ↔ 기대수익</h2>
