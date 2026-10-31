@@ -36,7 +36,9 @@ def test_build_site(snapshot, tmp_path):
     d, db = snapshot
     out = tmp_path / "site"
     build(db, out)
-    assert (out / "index.html").read_text().count('data-static="1"') == 1
+    html = (out / "index.html").read_text()
+    assert html.count('data-static="1"') == 1 and 'data-build="' in html
+    assert all(f'"{f}?v=' in html for f in ("style.css", "app.js", "page2.js", "page3.js"))
     assert (out / "worker.js").exists() and (out / ".nojekyll").exists()
     names = set(zipfile.ZipFile(out / "py.zip").namelist())
     assert {"app/static_api.py", "app/page1.py", "core/simulate.py", "data/service.py"} <= names

@@ -151,8 +151,14 @@ def export(db, out, log=print, screener=True, screens=(), prev_index=None):
         for pat in PY_FILES:
             for f in sorted(ROOT.glob(pat)):
                 z.write(f, f.relative_to(ROOT).as_posix())
+    # GitHub Pages caches files for 10 minutes; versioned URLs keep a fresh index.html from mixing with
+    # cached old scripts after a deploy
+    ver = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     idx = out / "index.html"
-    idx.write_text(idx.read_text().replace('<html lang="ko">', '<html lang="ko" data-static="1">', 1))
+    html = idx.read_text().replace('<html lang="ko">', f'<html lang="ko" data-static="1" data-build="{ver}">', 1)
+    for f in ("style.css", "app.js", "page2.js", "page3.js"):
+        html = html.replace(f'"{f}"', f'"{f}?v={ver}"')
+    idx.write_text(html)
     (out / ".nojekyll").write_text("")
     size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
     log(f"site built in {out}: {len(index)} tickers, {size / 1e6:.1f} MB on disk")

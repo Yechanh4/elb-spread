@@ -71,7 +71,8 @@ let worker = null, wseq = 0;
 const wpending = new Map();
 function pyWorker() {
   if (worker) return worker;
-  worker = new Worker("worker.js");
+  const build = document.documentElement.dataset.build;
+  worker = new Worker("worker.js" + (build ? "?v=" + build : ""));
   worker.onmessage = e => {
     const m = e.data;
     if ("progress" in m) {
