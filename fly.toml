@@ -1,0 +1,20 @@
+# fly launch --no-deploy --copy-config && fly volumes create elb_data --size 1 && fly deploy
+app = "elb-spread"
+primary_region = "nrt"
+
+[build]
+
+[env]
+  ELB_DB = "/data/market.sqlite"
+  PORT = "8780"
+
+[mounts]
+  source = "elb_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8780
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0

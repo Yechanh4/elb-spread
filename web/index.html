@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ELB 스프레드 시뮬레이터</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <h1>ELB 콜 스프레드 시뮬레이터</h1>
+  <nav class="routes">
+    <a href="#/sim" data-route="sim">1 · 종목 시뮬레이션</a>
+    <a href="#/optimizer" data-route="optimizer">2 · 역최적화</a>
+    <a href="#/timeline" data-route="timeline">3 · 8년 타임라인</a>
+  </nav>
+  <div class="asof">
+    <span id="asof">데이터 기준: -</span>
+    <span id="stale"></span>
+    <span class="legend-key">시장값<span class="mkt-tag">mkt</span> · 모델값<span class="mdl mdl-tag">model</span></span>
+    <button class="btn" id="refresh" title="Yahoo에서 지금 다시 받습니다 (무료 소스, 15~20분 지연)">새로고침</button>
+    <button class="btn" id="share" title="지금 화면의 입력 전체를 짧은 링크로 저장하고 복사">공유</button>
+  </div>
+</header>
+<div id="view"></div>
+<div id="tip"></div>
+<div class="busy" id="busy">계산 중…</div>
+<footer class="disc">입력값은 가정이지 예측이 아닙니다. 분석 도구이며 투자 권유가 아닙니다. 실행 시점에 금리·IV·호가를 반드시 다시 확인하세요.
+  <span id="delay"></span></footer>
+<script src="app.js"></script>
+<script src="page2.js"></script>
+<script src="page3.js"></script>
+</body>
+</html>

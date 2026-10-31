@@ -1,0 +1,22 @@
+# Render blueprint: Dashboard > New > Blueprint > pick this GitHub repo. Render reads this file.
+# Measured peak memory at these settings: ~260 MB per simulation (one at a time), so Starter (512 MB) fits.
+services:
+  - type: web
+    name: elb-spread
+    runtime: docker
+    region: singapore          # closest Render region to Korea
+    plan: starter              # a persistent disk needs a paid plan (see README for the free variant)
+    healthCheckPath: /api/status
+    envVars:
+      - key: ELB_DB
+        value: /data/market.sqlite
+      - key: ELB_MAX_PATHS     # caps Monte Carlo paths so a request cannot exceed the instance's memory
+        value: "20000"
+      - key: ELB_BASIC_AUTH    # "user:password" — Render asks for it on first deploy; the app is otherwise public
+        sync: false
+      - key: ECOS_API_KEY      # optional: Bank of Korea key for the live KRW 2y yield
+        sync: false
+    disk:
+      name: elb-data           # SQLite cache + share links survive deploys and restarts
+      mountPath: /data
+      sizeGB: 1

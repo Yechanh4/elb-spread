@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.DS_Store
+# runtime cache (market snapshots, share links) — rebuilt on the server
+data/*.sqlite
+data/*.sqlite-*
+# local tool state, not part of the app
+ruvector.db
+.claude-flow/
+.swarm/
+*.png
