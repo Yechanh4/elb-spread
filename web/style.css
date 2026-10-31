@@ -123,3 +123,8 @@ footer.disc { position: sticky; bottom: 0; z-index: 15; background: var(--surfac
   footer.disc { position: static; }
   .asof { margin-left: 0; }
 }
+
+.sugbox { border: 1px dashed var(--border); border-radius: 6px; padding: 6px 8px; margin: 4px 0 8px; }
+.sughead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
+.sughead .btn { padding: 1px 8px; font-size: 12px; }
+.sughead .btn:disabled { opacity: .6; cursor: default; }

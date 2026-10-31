@@ -85,3 +85,68 @@ def test_rolling_hv_and_iv_rank_proxy():
     rows = [dict(t="A", iv_minus_hv=0.05, iv_rank_proxy=0.2), dict(t="B", iv_minus_hv=-0.1, iv_rank_proxy=0.9),
             dict(t="C", iv_minus_hv=0.05, iv_rank_proxy=0.1)]
     assert [x["t"] for x in vol.screen(rows)] == ["B", "C", "A"]
+
+
+# ---------------------------------------------------------------- sigma_hat suggestion
+
+def garch_path(n, a, b, sigma, seed):
+    rng = np.random.default_rng(seed)
+    v = sigma**2 / 252
+    h, r = v, np.empty(n)
+    for i in range(n):
+        r[i] = rng.normal() * np.sqrt(h)
+        h = v * (1 - a - b) + a * r[i] ** 2 + b * h
+    return r
+
+
+def test_garch_recovers_parameters_and_mean_reverts():
+    r = garch_path(4000, 0.08, 0.90, 0.30, seed=3)
+    g = vol.garch11(r)
+    assert g["persistence"] == pytest.approx(0.98, abs=0.02)
+    assert g["long_run_vol"] == pytest.approx(0.30, rel=0.1)
+    hi = dict(g, h_next=4 * g["var_target"])                       # a shock: today's vol is twice the long run
+    s1, s63, s5000 = (vol.garch_term_vol(hi, n) for n in (1, 63, 5000))
+    assert s1 > s63 > s5000 > g["long_run_vol"] and s5000 == pytest.approx(g["long_run_vol"], rel=0.05)
+
+
+def test_har_and_ewma_on_constant_vol():
+    rng = np.random.default_rng(4)
+    r = rng.normal(0, 0.25 / np.sqrt(252), 2000)
+    assert vol.har_vol(r, 63) == pytest.approx(0.25, rel=0.1)
+    assert vol.ewma_vol(r) == pytest.approx(0.25, rel=0.25)        # EWMA is noisy: ~30-day memory
+    with pytest.raises(ValueError):
+        vol.garch11(r[:50])
+
+
+def test_earnings_reaction_follows_report_timing():
+    dates = ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12"]
+    closes = [100, 100, 110, 110, 99, 99]                            # +10% into the 7th, -10% into the 9th
+    rx = vol.earnings_reactions(dates, closes, [dict(date="2026-01-07", timing="bmo"),
+                                                dict(date="2026-01-08", timing="amc"),
+                                                dict(date="2026-01-10", timing=None)])
+    assert [round(x["move"], 4) for x in rx] == [round(np.log(1.1), 4), round(np.log(1.1 / 0.99), 4), 0.0]
+    assert [x["idx"] for x in rx] == [1, 3, 4]                       # a weekend report reacts on Monday
+
+
+def test_sigma_suggestion_strips_and_readds_earnings():
+    rng = np.random.default_rng(5)
+    n, base = 756, 0.25
+    r = rng.normal(0, base / np.sqrt(252), n)
+    dates = [date.fromordinal(date(2024, 1, 1).toordinal() + i) for i in range(n + 1)]
+    past = []
+    for i in range(40, n, 63):                                       # quarterly +-9% jumps, bmo
+        r[i] = 0.09 * (1 if i % 2 else -1)
+        past.append(dict(date=dates[i + 1].isoformat(), timing="bmo"))
+    closes = 100 * np.exp(np.cumsum(np.r_[0, r]))
+    asof = dates[-1]
+    expiry = date.fromordinal(asof.toordinal() + 91)
+    g = vol.sigma_suggestion([d.isoformat() for d in dates], closes, past, [], asof, expiry, iv=0.30)
+    assert g["earnings"]["rms_move"] == pytest.approx(0.09, rel=1e-6)
+    assert g["base"] == pytest.approx(base, rel=0.12)                # the jumps are not in the base
+    assert g["hv1y"] > g["base"]                                     # ...but they inflate plain HV
+    k = len(g["earnings"]["in_window"])
+    assert k >= 1 and all(x["source"].startswith("projected") for x in g["earnings"]["in_window"])
+    T = g["T"]
+    expect = np.sqrt(g["base"] ** 2 + k * (0.09**2 - g["base"] ** 2 / 252) / T)
+    assert g["suggested"] == pytest.approx(expect)
+    assert g["edge_vs_iv"] == pytest.approx(g["suggested"] - 0.30)

@@ -53,6 +53,7 @@ class BSProvider(MarketDataProvider):
 
     def events(self, t, asof):
         return dict(earnings=[dict(date="2027-01-05", estimated=True)], ex_dividends=[],
+                    earnings_past=[dict(date="2025-11-04", timing="amc"), dict(date="2026-02-03", timing="bmo")],
                     dividends=dict(dates=[], amounts=[]))
 
 
@@ -98,3 +99,17 @@ def test_overrides_and_user_inputs(svc):
     assert a["spread"]["k2_rule"] == "narrowest" and a["spread"]["rt_cost"] == pytest.approx(0.04)
     assert out["budget"]["budgets"][0] == pytest.approx(bud.budget(r=0.02)) and out["budget"]["r_origin"] == "user"
     assert a["decomposition"]["drift_contribution"] > 0
+
+
+def test_sigma_suggestion_on_card(svc):
+    from app.page1 import run_page1
+    out = run_page1(state(["AAA", "DDD"]), svc)
+    for b in out["tickers"]:
+        g = b["model"]["sigma_suggest"]
+        assert set(g["models"]) == {"ewma", "garch", "har"}
+        assert g["earnings"]["n_history"] == 2 and g["earnings"]["in_window"][0]["date"] == "2027-01-05"
+        assert g["suggested"] >= g["base"] > 0     # an earnings day adds only what it moves beyond a normal day
+        assert g["edge_vs_iv"] == pytest.approx(g["suggested"] - b["model"]["iv_atm"])
+    by = {b["ticker"]: b["model"]["sigma_suggest"] for b in out["tickers"]}
+    assert by["AAA"]["base"] > by["DDD"]["base"]                   # 60% vs 20% realized history
+    assert by["DDD"]["edge_vs_iv"] < 0                             # 20% history cannot justify a 45% IV

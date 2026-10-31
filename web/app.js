@@ -238,6 +238,7 @@ function renderTickerCards() {
       <div class="facts" id="tfacts${i}"><div><span>현물</span> –</div></div>
       <div class="field"><label data-tip="상장 월물 중 60일 넘게 남은 3개. 기본은 q 검증을 통과한 것 중 3개월에 가장 가까운 것.">만기</label><select data-t="${i}" data-k="expiry" id="texp${i}"><option value="">자동</option></select></div>
       ${tField(i, "sigma_hat", "σ̂ (연, 소수)", 'type="number" step="0.01" min="0.05" max="3" placeholder="HV 1y"', "리서치 변동성 견해. 비우면 HV 1y 자리표시(합성 아님, 근거 없음 표시). Edge = σ̂ − ATM IV > 0 이어야 시뮬레이션에 들어감.")}
+      <div id="tsug${i}" class="sug"></div>
       ${tField(i, "mu_hat", "μ̂ 드리프트 (연)", 'type="number" step="0.01" placeholder="견해 없음"', "방향성 견해. 옵션 가격엔 안 들어가지만(BS에서 상쇄) 손익엔 들어감 — 기여분을 따로 표시.")}
       <div class="field"><label data-tip="σ_used = conf·σ̂ + (1−conf)·IV. 확신이 낮을수록 시장으로 수축.">확신도 <span id="tconfv${i}">${t.conf ?? 0.7}</span></label><input type="range" min="0" max="1" step="0.05" data-t="${i}" data-k="conf" value="${t.conf ?? 0.7}"></div>
       ${tField(i, "weight", "비중 (비우면 균등)", 'type="number" step="0.05" min="0" max="1" placeholder="균등"', "옵션 예산 중 이 종목 몫. 합이 1이 아니면 자동 정규화.")}
@@ -267,6 +268,32 @@ function catRow(i, j, c) {
   return `<div class="catrow"><input data-cat="${i},${j},name" value="${esc(c.name)}" placeholder="이름">
     <input data-cat="${i},${j},date" type="date" value="${esc(c.date)}"><input data-cat="${i},${j},move" type="number" step="0.01" value="${c.move}" title="예상 |변동| (소수, 0.08 = 8%)">
     <button class="x btn" data-delcat="${i},${j}" style="padding:0 4px">×</button></div>`;
+}
+function sugBlock(i, g, t) {
+  if (!g) return "";
+  if (g.error) return `<div class="note">σ̂ 추천 계산 불가: ${esc(g.error)}</div>`;
+  const E = g.earnings, M = g.models, edge = g.edge_vs_iv;
+  const same = isNum(t.sigma_hat) && Math.abs(t.sigma_hat - g.suggested) < 0.0005;
+  const mdlRow = [["GARCH", M.garch, `GARCH(1,1) 만기까지 평균 예측. 지속성 ${g.garch ? num(g.garch.persistence, 3) : "–"}, 반감기 ${g.garch ? num(g.garch.half_life_days, 0) : "–"}거래일 — 지금 변동성이 장기 평균(${g.garch ? pct(g.garch.long_run_vol) : "–"})으로 돌아가는 속도를 반영`],
+    ["HAR", M.har, "일·주·월 실현변동성으로 만기까지의 평균 실현변동성을 직접 회귀 예측"],
+    ["EWMA", M.ewma, "RiskMetrics λ=0.94 — 지금 수준(앞으로 평평하다고 가정), 참고용"],
+    ["HV 1y", g.hv1y, "과거 1년 단순 표준편차, 참고용"]]
+    .map(([n, v, tip]) => `<span data-tip="${esc(tip)}">${n} ${mdl(pct(v))}</span>`).join(" · ");
+  const hist = E.history.map(x => `${x.date}${x.timing ? " " + x.timing : ""} ±${pct(x.move)}`).join(", ");
+  const win = E.in_window.length ? E.in_window.map(x => `${x.date}${x.source === "feed" ? "" : " (추정)"}`).join(", ") : "없음";
+  const evLine = E.n_history ? `과거 ${E.n_history}회 반응 RMS ±${pct(E.rms_move)} (평균 |변동| ${pct(E.mean_abs_move)})`
+    : (g.past_feed ? "과거 실적 반응 데이터 없음" : "과거 실적일 데이터가 아직 없음 — 다음 데이터 갱신 후 반영");
+  return `<div class="sugbox">
+    <div class="sughead"><span data-tip="σ̂² = 기본² + Σ(실적 RMS² − 하루치 기본분산)/T. 기본 = GARCH·HAR 평균(실적일 제외 수익률). 리서치 견해를 대신하지 않는 출발점.">σ̂ 추천</span>
+      <b>${mdl(pct(g.suggested))}</b>
+      <span class="badge ${edge > 0.02 ? "good" : edge > 0 ? "warn" : "bad"}" data-tip="추천 σ̂ − ATM IV. IV는 평균적으로 실현변동성보다 2~4%p 높음(분산 리스크 프리미엄) — 추천값이 IV와 비슷하거나 낮으면 데이터만으로는 Edge가 없다는 뜻.">IV 대비 ${(edge >= 0 ? "+" : "−") + (Math.abs(edge) * 100).toFixed(1)}%p</span>
+      <button class="btn primary" data-sug="${g.suggested}" ${same ? "disabled" : ""}>${same ? "적용됨" : "적용"}</button>
+      <button class="btn" data-sug="${g.base}" data-tip="실적 점프 없이 기본 변동성만">기본만 ${pct(g.base)}</button></div>
+    <div class="sub">기본(실적일 제외) ${mdl(pct(g.base))} = ${esc(g.base_source)} · 만기까지 ${g.n_days}거래일</div>
+    <div class="sub">${mdlRow}</div>
+    <div class="sub" ${hist ? `data-tip="${esc(hist)}"` : ""}>실적: 만기 전 ${E.in_window.length}회 (${esc(win)}) · ${evLine}</div>
+    ${t.use_catalyst && (t.catalysts || []).length ? `<div class="note alert">카탈리스트 계산기 사용 중 — 추천값을 적용하면 계산기는 꺼짐(실적이 이미 들어 있어 이중 반영 방지)</div>` : ""}
+  </div>`;
 }
 function onTickerInput(e) {
   const i = +e.target.dataset.t, k = e.target.dataset.k, t = S.state.tickers[i];
@@ -305,6 +332,12 @@ function updateCardFacts() {
     const e = md.edge;
     $("#tedge" + i).innerHTML = `<span class="badge ${e > 0 ? "good" : "bad"}" data-tip="Edge = σ̂ − ATM IV. BS 가격에서 드리프트가 상쇄되므로 '싸다'는 변동성으로만 주장 가능. Edge>0만 시뮬레이션에 포함.">
       Edge ${mdl((e >= 0 ? "+" : "") + pct(e))}</span> <span class="sub">σ̂ ${mdl(pct(md.sigma_hat))} · ${esc(md.sigma_hat_source)}</span>`;
+    $("#tsug" + i).innerHTML = sugBlock(i, md.sigma_suggest, t);
+    $("#tsug" + i).querySelectorAll("[data-sug]").forEach(btn => btn.onclick = () => {
+      t.sigma_hat = Math.round(+btn.dataset.sug * 1000) / 1000;
+      t.use_catalyst = false;                           // the calculator would override the typed σ̂
+      renderTickerCards(); schedule(0);
+    });
     const c = md.catalyst;
     let co = c.sigma_hat ? `계산기 σ̂ = ${mdl(pct(c.sigma_hat))} (base ${pct(c.base)})` : "이벤트 없음";
     if (c.priced_in) {

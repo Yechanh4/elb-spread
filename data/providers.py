@@ -113,7 +113,7 @@ class MarketDataProvider(ABC):
 
     @abstractmethod
     def events(self, ticker, asof):
-        """-> {earnings: [{date, estimated}], ex_dividends: [{date, projected}], dividends: {dates, amounts}}"""
+        """-> {earnings: [{date, estimated}], earnings_past: [{date, timing: bmo|amc|None}], ex_dividends: [{date, projected}], dividends: {dates, amounts}}"""
 
 
 class MacroProvider(ABC):
@@ -211,6 +211,19 @@ class YFinanceProvider(MarketDataProvider):
                     earnings.append(dict(date=d.isoformat(), estimated=True))
         except Exception:  # noqa: BLE001 - calendar is best-effort
             pass
+        past = []
+        try:                                       # report timestamps say before (bmo) or after (amc) the session
+            ed = t.get_earnings_dates(limit=16)
+            for ts in (ed.index if ed is not None else []):
+                d = ts.date()
+                hm = ts.hour + ts.minute / 60
+                timing = "amc" if hm >= 16 else "bmo" if 0 < hm <= 9.5 else None
+                if d < asof:
+                    past.append(dict(date=d.isoformat(), timing=timing))
+                elif not earnings:
+                    earnings.append(dict(date=d.isoformat(), estimated=True))
+        except Exception:  # noqa: BLE001 - best-effort, like the calendar
+            pass
         divs = t.dividends
         dd = [d.date().isoformat() for d in divs.index]
         confirmed = None
@@ -220,7 +233,8 @@ class YFinanceProvider(MarketDataProvider):
                 confirmed = datetime.fromtimestamp(ts, timezone.utc).date()
         except Exception:  # noqa: BLE001
             pass
-        return dict(earnings=earnings, ex_dividends=project_ex_dividends(dd, asof, confirmed=confirmed),
+        return dict(earnings=sorted(earnings, key=lambda e: e["date"]),
+                    earnings_past=sorted(past, key=lambda e: e["date"]), ex_dividends=project_ex_dividends(dd, asof, confirmed=confirmed),
                     dividends=dict(dates=dd[-12:], amounts=[float(a) for a in divs.tolist()[-12:]]))
 
 

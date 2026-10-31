@@ -20,7 +20,8 @@ from core.simulate import (Marginal, SimConfig, TickerSpec, correlation_from_pri
                            dubins_savage_regime, pin_prob, simulate, summarize)
 from core.spread import build_spread, return_decomposition
 from core.structure import liquid, select_k2
-from core.vol import catalyst_sigma, catalyst_timing, hv_close_to_close, hv_parkinson, priced_in_check
+from core.vol import (catalyst_sigma, catalyst_timing, hv_close_to_close, hv_parkinson, priced_in_check,
+                      sigma_suggestion)
 from data.providers import DELAY_NOTE
 from data.trading_days import WEEKDAY_KO, quote_label
 from data.service import DataUnavailable, chain_slice
@@ -121,6 +122,29 @@ def pick_expiry(cands):
     """Default expiry: q passes, T closest to 3 months."""
     ok = [c for c in cands if c["q_pass"]] or cands
     return min(ok, key=lambda c: abs(c["T"] - 0.25))["expiry"]
+
+
+_SUG_CACHE = OrderedDict()
+
+
+def suggestion_for(b, expiry, iv):
+    """sigma_hat starting point (GARCH/HAR base + past earnings jumps), memoized per snapshot and expiry."""
+    ev = b.events.value if b.events else {}
+    key = (b.ticker, b.history.fetched_at.isoformat(), b.events.fetched_at.isoformat() if b.events else None,
+           expiry, b.asof_date.isoformat())
+    if key not in _SUG_CACHE:
+        h = b.history.value
+        try:
+            _SUG_CACHE[key] = sigma_suggestion(h["dates"], h["close"], ev.get("earnings_past"), ev.get("earnings"),
+                                               b.asof_date, date.fromisoformat(expiry))
+        except ValueError as e:
+            _SUG_CACHE[key] = dict(error=str(e))
+        while len(_SUG_CACHE) > 64:
+            _SUG_CACHE.popitem(last=False)
+    out = dict(_SUG_CACHE[key])
+    if "suggested" in out:
+        out.update(iv=iv, edge_vs_iv=out["suggested"] - iv, past_feed=ev.get("earnings_past") is not None)
+    return out
 
 
 def catalyst_block(svc, b, tk, chosen_expiry, iv_in, S0, r, d, hv1y):
@@ -275,7 +299,7 @@ def ticker_block(svc, tk, g, B0, fx, r_usd, n_tickers, today):
             p_finish_below_K1=float(marg.cdf(sp.k1)),
             density=dict(S=x, q=qd, p=pd_, ell=ld, buy=mask, c=reg.c, K_lo=reg.K_lo, P_p=reg.P_p, Q_q=reg.Q_q,
                          binding=reg.binding),
-            decomposition=decomp, catalyst=cat,
+            decomposition=decomp, catalyst=cat, sigma_suggest=suggestion_for(b, chosen, md.iv_atm),
             rules=[dict(code=s.code, status=s.status, message=s.message) for s in evaluate(pos, today)],
             close_by=close_by_date(pos.expiry).isoformat(), actions=action_list(pos, today),
             bdays_to_close=business_days_left(today, close_by_date(pos.expiry)),
