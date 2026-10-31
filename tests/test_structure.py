@@ -73,3 +73,16 @@ def test_goal_criterion_picks_max_goal_probability(chain):
     assert next(r for r in res["table"] if r["chosen"])["p_goal"] == pytest.approx(max(r["p_goal"] for r in ok))
     with pytest.raises(ValueError):
         select_k2(chain, S0, 0.45, B, FX, view(), "median")
+
+
+def test_end_of_day_quotes_judge_open_interest_only(chain):
+    from core.structure import liquid
+    wide = make_chain(S0=S0, sigma=0.45, T=T, half_spread_frac=0.3, min_half=0.05, oi=500,
+                      strikes=np.arange(60.0, 220.0 + 1e-9, 2.5))
+    res = select_k2(wide, S0, 0.45, B, FX, view(), "expected")
+    assert not res["eligible_found"] and not res["chosen"].liquidity_ok          # session rule: spread too wide
+    res = select_k2(wide, S0, 0.45, B, FX, view(), "expected", spread_check=False)
+    assert res["eligible_found"] and liquid(res["chosen"], spread_check=False)    # end-of-day: OI decides
+    thin = make_chain(S0=S0, sigma=0.45, T=T, half_spread_frac=0.3, min_half=0.05, oi=20,
+                      strikes=np.arange(60.0, 220.0 + 1e-9, 2.5))
+    assert not select_k2(thin, S0, 0.45, B, FX, view(), "expected", spread_check=False)["eligible_found"]

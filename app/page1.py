@@ -19,7 +19,7 @@ from core.selection import buy_region, call_region, edge
 from core.simulate import (Marginal, SimConfig, TickerSpec, correlation_from_prices, cumulative_pin,
                            dubins_savage_regime, pin_prob, simulate, summarize)
 from core.spread import build_spread, return_decomposition
-from core.structure import select_k2
+from core.structure import liquid, select_k2
 from core.vol import catalyst_sigma, catalyst_timing, hv_close_to_close, hv_parkinson, priced_in_check
 from data.providers import DELAY_NOTE
 from data.service import DataUnavailable, chain_slice
@@ -205,6 +205,8 @@ def ticker_block(svc, tk, g, B0, fx, r_usd, n_tickers, today):
         res["fatal"] = f"{chosen}: {exp_row['error']}"
         return res, None
     cs, md, dropped = density_for(b.chains[chosen], S0, r_usd, d, b.asof_date)
+    session = b.chains[chosen].value.get("session")
+    off_hours = session == "off-hours"
     cat = catalyst_block(svc, b, tk, chosen, md.iv_atm, S0, r_usd, d, hv1y)
     if tk.get("use_catalyst") and cat["sigma_hat"]:
         sigma_hat, sig_src = cat["sigma_hat"], "catalyst calculator"
@@ -228,7 +230,7 @@ def ticker_block(svc, tk, g, B0, fx, r_usd, n_tickers, today):
     try:
         if g["k2_rule"] == "cost-aware":
             sel = select_k2(cs, S0, sigma_hat, B_alloc, fx, marg, g["k2_criterion"], rt_cost=g["rt_cost"],
-                            leg_cross=g["leg_cross"], target_krw=target, cfg=cfg_small)
+                            leg_cross=g["leg_cross"], target_krw=target, cfg=cfg_small, spread_check=not off_hours)
             sp, narrowest, table = sel["chosen"], sel["narrowest"], sel["table"]
         else:
             sp = build_spread(cs, S0, sigma_hat, B_alloc, fx, rt_cost=g["rt_cost"], target_krw=target,
@@ -248,13 +250,17 @@ def ticker_block(svc, tk, g, B0, fx, r_usd, n_tickers, today):
                    broker_recognizes_spread=g["broker_confirmed"], ex_div_dates=xd)
     hv_proxy = dict(hv1y=hv1y, hv2y=hv2y, parkinson_1y=park)
     eligible_q = md.passed or tk.get("use_failed_q")
-    eligible_liq = sp.liquidity_ok or tk.get("use_illiquid")
+    liq_pass = liquid(sp, spread_check=not off_hours)
+    eligible_liq = liq_pass or tk.get("use_illiquid")
+    liq_offhours = off_hours and liq_pass and not sp.liquidity_ok
     reasons = [r for r, bad in (("Edge <= 0: sigma_hat does not exceed ATM IV", e <= 0),
                                 ("q extraction failed its sanity checks", not eligible_q),
-                                ("liquidity filter failed (OI >= 100, leg spread <= 10% of mid)", not eligible_liq)) if bad]
+                                (("liquidity filter failed (OI >= 100; leg spread not judged on end-of-day quotes)" if off_hours else
+                                 "liquidity filter failed (OI >= 100, leg spread <= 10% of mid)"), not eligible_liq)) if bad]
     res.update(
         chosen_expiry=chosen,
         model=dict(
+            quote_session=session, liquidity_offhours=liq_offhours,
             sigma_hat=sigma_hat, sigma_hat_source=sig_src, sigma_used=tilt.sigma_used, mu_hat=mu_hat, conf=conf,
             iv_atm=md.iv_atm, edge=e, eligible=e > 0, hv=hv_proxy, kl=tilt.kl, kl_level=kl_level(tilt.kl),
             tilt_converged=tilt.converged, tilt_edge_mass=tilt.edge_mass,

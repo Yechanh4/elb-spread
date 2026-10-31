@@ -27,7 +27,15 @@ def expected_roll_multiple(marginal, k1, k2, cost_rel, u=None):
     return float(np.mean(np.clip(R - k1, 0.0, k2 - k1)) / cost_rel)
 
 
-def score_candidates(cands, marginal, criterion="expected", cfg=None, S0=None):
+def liquid(sp, spread_check=True):
+    """Liquidity filter. spread_check=False keeps only the open-interest test: after the close (and on
+    weekends) Yahoo shows end-of-day quotes whose bid-ask is much wider than in the session, so the
+    spread test says nothing about tradeability then. Costs still use those wide quotes (conservative)."""
+    oi = sp.liquidity["oi_k1"] and sp.liquidity["oi_k2"]
+    return sp.liquidity_ok if spread_check else oi
+
+
+def score_candidates(cands, marginal, criterion="expected", cfg=None, S0=None, spread_check=True):
     if criterion not in CRITERIA:
         raise ValueError(f"criterion must be one of {CRITERIA}")
     u = _u_grid()
@@ -35,7 +43,7 @@ def score_candidates(cands, marginal, criterion="expected", cfg=None, S0=None):
     U = None
     for sp in cands:
         row = dict(K2=sp.K2, width=sp.K2 - sp.K1, net_mid=sp.net_mid, rt_cost=sp.rt_cost,
-                   payoff_multiple=sp.payoff_multiple, liquidity_ok=sp.liquidity_ok, target_ok=sp.target_ok,
+                   payoff_multiple=sp.payoff_multiple, liquidity_ok=liquid(sp, spread_check), target_ok=sp.target_ok,
                    e_multiple=expected_roll_multiple(marginal, sp.k1, sp.k2, sp.cost_rel, u))
         if criterion == "goal":
             cfg = cfg or SimConfig(n_paths=4000, n_store=0)
@@ -49,13 +57,13 @@ def score_candidates(cands, marginal, criterion="expected", cfg=None, S0=None):
 
 
 def select_k2(chain, S0, sigma_hat, budget_krw, fx, marginal, criterion="expected", rt_cost=0.04,
-              leg_cross=1.0, target_krw=None, cfg=None, max_width_pct=0.60, **kw):
+              leg_cross=1.0, target_krw=None, cfg=None, max_width_pct=0.60, spread_check=True, **kw):
     """Returns dict(chosen, narrowest, table, eligible_found). chosen.k2_rule = 'cost-aware'."""
     cands = candidate_spreads(chain, S0, sigma_hat, budget_krw, fx, rt_cost=rt_cost, target_krw=target_krw,
                               cost_mode="chain", leg_cross=leg_cross, max_width_pct=max_width_pct, **kw)
     narrowest = build_spread(chain, S0, sigma_hat, budget_krw, fx, rt_cost=rt_cost, target_krw=target_krw,
                              cost_mode="chain", leg_cross=leg_cross, **kw)
-    table = score_candidates(cands, marginal, criterion, cfg, S0)
+    table = score_candidates(cands, marginal, criterion, cfg, S0, spread_check)
     eligible = [i for i, r in enumerate(table) if r["liquidity_ok"] and r["target_ok"]]
     pool = eligible or list(range(len(table)))
     best = max(pool, key=lambda i: table[i]["score"])

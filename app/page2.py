@@ -15,7 +15,7 @@ from core.density import mixture, subjective_density
 from core.optimize import Evaluator, scenario_table, sensitivity, solve, ticker_count_curve
 from core.selection import edge
 from core.simulate import Marginal, SimConfig, TickerSpec, correlation_from_prices
-from core.structure import select_k2
+from core.structure import liquid, select_k2
 from core.vol import hv_close_to_close, iv_rank_proxy, screen
 from data.service import DataUnavailable
 
@@ -115,8 +115,10 @@ def prepare(svc, cand, names, probs, g, cons, B0, fx, r_usd):
     sig_mix = float(np.dot(probs, [sig[s] for s in names]))
     m_mix = Marginal.from_density(md.S, mix.p, md.weights, S0)
     try:
+        off_hours = b.chains[chosen].value.get("session") == "off-hours"
         sel = select_k2(cs, S0, sig_mix, B0, fx, m_mix, "expected", rt_cost=g["rt_cost"], leg_cross=g["leg_cross"],
-                        target_krw=g["G"] / bud.N_CYCLES, min_oi=cons["min_oi"], max_spread_pct=cons["max_spread_pct"])
+                        target_krw=g["G"] / bud.N_CYCLES, min_oi=cons["min_oi"], max_spread_pct=cons["max_spread_pct"],
+                        spread_check=not off_hours)
     except ValueError as ex:
         return dict(ticker=T_, eligible=False, reason=f"no tradeable spread: {ex}"), None, None
     sp = sel["chosen"]
@@ -126,7 +128,8 @@ def prepare(svc, cand, names, probs, g, cons, B0, fx, r_usd):
                                 ("q extraction failed its sanity checks", not md.passed),
                                 (f"liquidity filter failed at {sp.K1:g}/{sp.K2:g}: OI {sp.c1['oi']:.0f}/{sp.c2['oi']:.0f} "
                                  f"(min {cons['min_oi']}), leg spread {sp.c1['spread_pct']:.0%}/{sp.c2['spread_pct']:.0%} "
-                                 f"(max {cons['max_spread_pct']:.0%})", not sp.liquidity_ok)) if bad]
+                                 f"(max {cons['max_spread_pct']:.0%}{'; spread not judged on end-of-day quotes' if off_hours else ''})",
+                                 not liquid(sp, spread_check=not off_hours))) if bad]
     from core.structure import expected_roll_multiple
     info = dict(ticker=T_, name=inf["name"], sector=inf["sector"], spot=S0, expiry=chosen, T=cs.T,
                 iv_atm=md.iv_atm, hv1y=hv1y, iv_rank_proxy=iv_rank_proxy(md.iv_atm, closes),
@@ -135,6 +138,8 @@ def prepare(svc, cand, names, probs, g, cons, B0, fx, r_usd):
                 kl={s: tilts[s].kl for s in names}, kl_mix=mix.kl,
                 K1=sp.K1, K2=sp.K2, net_mid=sp.net_mid, rt_cost=sp.rt_cost, net_cost=sp.net_cost,
                 payoff_multiple=sp.payoff_multiple, breakeven_pct=sp.breakeven_pct, liquidity_ok=sp.liquidity_ok,
+                quote_session=b.chains[chosen].value.get("session"),
+                liquidity_offhours=off_hours and liquid(sp, False) and not sp.liquidity_ok,
                 narrowest_K2=sel["narrowest"].K2, narrowest_rt=sel["narrowest"].rt_cost,
                 e_multiple={s: expected_roll_multiple(marg[s], sp.k1, sp.k2, sp.cost_rel) for s in names},
                 q_pass=md.passed, eligible=not reasons, reason="; ".join(reasons) or None,

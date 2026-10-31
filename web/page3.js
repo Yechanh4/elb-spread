@@ -1,13 +1,13 @@
 /* Page 3 — 8-year execution timeline, exports. Uses helpers from app.js and page2.js. */
 "use strict";
 
-const P3KEY = "elb.page3.state.v1";
+const P3KEY = "elb.page3.state.v2";
 const P3 = { state: p3load(), seed: null, result: null, scen: "neutral", rep: "median", roll: null, busy: false };
 const REP_KO = { median: "중앙값 경로", goal: "목표 달성 경로", low: "하위 10% 경로" };
 
 function p3default() {
   return {
-    source: "manual", tickers: [{ ticker: "AMD" }, { ticker: "NVDA" }], weights: null, f: [1, 1, 1, 1],
+    source: "manual", tickers: [{ ticker: "AMD" }, { ticker: "AMZN" }, { ticker: "GOOGL" }], weights: null, f: [1, 1, 1, 1],
     scenarios: JSON.parse(JSON.stringify(P2DEF.scenarios)),
     globals: { G: 756e6, r: null, n_paths: 20000, start: "2026-12-01", tax: true, copula: "gaussian", seed: 0,
       broker_confirmed: null, V_deposit: 1.5e9, V_own_rental: 3.8e8, T: 2, mortgage_rate: 0.04, remaining_months: 264 },

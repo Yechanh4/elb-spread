@@ -3,9 +3,9 @@
    between the 11 precomputed slider positions on the client, so dragging is instant. */
 "use strict";
 
-const P2KEY = "elb.page2.state.v1";
+const P2KEY = "elb.page2.state.v2";
 const P2DEF = {
-  candidates: [{ ticker: "AMD" }, { ticker: "NVDA" }, { ticker: "LLY" }, { ticker: "JPM" }],
+  candidates: [{ ticker: "AMD" }, { ticker: "AMZN" }, { ticker: "GOOGL" }, { ticker: "BA" }, { ticker: "META" }, { ticker: "TSLA" }],
   scenarios: [{ name: "up", shift_bp: 75, prob: 0.25 }, { name: "neutral", shift_bp: 0, prob: 0.5 }, { name: "down", shift_bp: -75, prob: 0.25 }],
   thresholds_bp: [-50, 50],
   constraints: { k_min: 3, k_max: 5, max_per_sector: 2, min_oi: 100, max_spread_pct: 0.10 },
@@ -197,7 +197,7 @@ function p2render() {
         <td>${statusBadge(c.edge_mix > 0 ? "pass" : "fail", (c.edge_mix >= 0 ? "+" : "") + pct(c.edge_mix))}</td>
         <td>${num(c.K1, 1)}/${num(c.K2, 1)}</td><td>${mdl(pct(c.rt_cost, 0))}</td>
         ${R.scenarios.map(s => `<td>${mdl(num(c.e_multiple[s.name], 3))}</td>`).join("")}<td>${mdl(num(c.kl_mix, 3))}</td>
-        <td>${c.eligible ? statusBadge("pass", "포함") : `<span data-tip="${esc(c.reason)}">${statusBadge("fail", "제외")}</span>`}${c.sigma_placeholder ? ' <span class="badge warn" data-tip="리서치 σ̂ 없음: HV 1y 자리표시">σ̂ 자리표시</span>' : ""}</td></tr>`
+        <td>${c.eligible ? statusBadge("pass", "포함") : `<span data-tip="${esc(c.reason)}">${statusBadge("fail", "제외")}</span>`}${c.sigma_placeholder ? ' <span class="badge warn" data-tip="리서치 σ̂ 없음: HV 1y 자리표시">σ̂ 자리표시</span>' : ""}${c.liquidity_offhours ? ' <span class="badge warn" data-tip="장 마감 후 호가: 호가폭 기준 보류, OI만 확인. 비용은 넓은 호가로 계산(보수적)">장외: OI만</span>' : ""}</td></tr>`
         : `<tr><td>${esc(c.ticker)}</td><td colspan="20">${statusBadge("fail", "제외")} ${esc(c.reason)}</td></tr>`).join("")}</table></div></section>
     ${R.error ? `<section class="panel banner">${esc(R.error)}</section>` : `
     <section class="panel"><h2>① 트레이드오프 — 목표확률 ↔ 기대수익</h2>

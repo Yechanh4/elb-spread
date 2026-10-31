@@ -3,7 +3,7 @@
 "use strict";
 
 const DEFAULT_STATE = {
-  tickers: [{ ticker: "AMD" }, { ticker: "NVDA" }, { ticker: "LLY" }],
+  tickers: [{ ticker: "AMD" }, { ticker: "AMZN" }, { ticker: "GOOGL" }],
   globals: {
     V_deposit: 1.5e9, V_own_rental: 3.8e8, r: null, T: 2, rate_shift: 0, G: 756e6, f: 1.0,
     k2_rule: "cost-aware", k2_criterion: "expected", cost_mode: "chain", rt_cost: 0.04, leg_cross: 1.0,
@@ -13,7 +13,7 @@ const DEFAULT_STATE = {
 };
 const GOAL_PRESETS = [[756e6, "756M · 잔여 대출 전액"], [500e6, "500M · 대출의 2/3"], [300e6, "300M · 40%"],
   [70e6, "70M · 채권 기회비용만"]];
-const KEY = "elb.page1.state.v1";
+const KEY = "elb.page1.state.v2";   // v2: new default tickers
 const S = { state: loadState(), result: null, req: 0, timer: null, densityTab: 0, path: 0, playing: false };
 
 function loadState() {
@@ -315,7 +315,8 @@ function updateCardFacts() {
     $("#tcatout" + i).innerHTML = co;
     $("#tqfail" + i).innerHTML = (md.q_pass ? "" : `<div class="note alert">q 추출 검증 실패 — 기본은 시뮬레이션 제외.
       <label><input type="checkbox" data-t="${i}" data-k="use_failed_q" ${t.use_failed_q ? "checked" : ""}> 그래도 사용</label></div>`)
-      + (md.spread.liquidity_ok ? "" : `<div class="note alert">유동성 필터 미달 (OI ≥ 100, 다리 호가 ≤ mid의 10%) — 기본은 제외.
+      + (md.liquidity_offhours ? `<div class="note">장 마감 후 호가라 호가폭 기준은 보류하고 OI만 확인함 — 비용은 넓은 장외 호가로 계산돼 보수적. 주문 전 장중 호가로 재확인.</div>` : "")
+      + (md.spread.liquidity_ok || md.liquidity_offhours ? "" : `<div class="note alert">유동성 필터 미달 (OI ≥ 100, 다리 호가 ≤ mid의 10%) — 기본은 제외.
       <label><input type="checkbox" data-t="${i}" data-k="use_illiquid" ${t.use_illiquid ? "checked" : ""}> 그래도 사용</label></div>`)
       + (b.in_simulation ? "" : `<div class="note">시뮬레이션 제외: ${esc(b.excluded_reason)}</div>`);
     $("#tqfail" + i).querySelectorAll("input").forEach(inp => inp.addEventListener("change", onTickerInput));
@@ -446,7 +447,7 @@ function structureTable(t) {
       <td>${mdl(int(sp.n_int))}</td><td>${mdl(won(sp.max_payoff_krw))}</td><td>${mdl(num(sp.payoff_multiple, 1) + "×")}</td>
       <td>${mdl("$" + num(sp.breakeven))}</td><td>${mdl("+" + pct(sp.breakeven_pct))}</td>
       <td>${int(sp.c1.oi)}/${int(sp.c2.oi)}</td><td>${pct(sp.c1.spread_pct)}/${pct(sp.c2.spread_pct)}</td>
-      <td>${statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
+      <td>${(!alt && b.model.liquidity_offhours) ? `<span class="badge warn" data-tip="장 마감 후(주말 포함) Yahoo 호가는 장중보다 매수·매도 차이가 훨씬 넓어서 호가폭 10% 기준은 판정하지 않고 OI(미결제약정)만 확인함. 비용은 그 넓은 호가로 계산돼 결과가 보수적. 실제 주문 전 장중 호가로 다시 확인.">! 장외: OI만</span>` : statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
       <td>${mdl(num(sp.target_ratio, 1))}</td></tr>`;
   };
   return `<table class="t">${head}${t.map((b, i) => {
@@ -720,7 +721,7 @@ function panelRisk(t, P, R) {
       <td>${md.close_by} <span class="sub" data-tip="R-1: 만기 2영업일 전 시장 청산. 만기까지 ${md.bdays_to_expiry}영업일">(${md.bdays_to_close}영업일 남음)</span></td>
       <td>${xd.length ? xd.map(e => e.date + (e.projected ? " (추정)" : "")).join(", ") : "없음"}</td>
       <td>${bad.length ? bad.map(x => `<span class="badge bad">${esc(x.name)} ${x.date}</span>`).join(" ") : statusBadge("pass", "OK")}</td>
-      <td>${statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
+      <td>${md.liquidity_offhours ? `<span class="badge warn" data-tip="장 마감 후(주말 포함) Yahoo 호가는 장중보다 매수·매도 차이가 훨씬 넓어서 호가폭 10% 기준은 판정하지 않고 OI(미결제약정)만 확인함. 비용은 그 넓은 호가로 계산돼 결과가 보수적. 실제 주문 전 장중 호가로 다시 확인.">! 장외: OI만</span>` : statusBadge(sp.liquidity_ok ? "pass" : "fail", sp.liquidity_ok ? "통과" : "미달")}</td>
       <td><div class="rules">${md.rules.map(r => `<span data-tip="${esc(r.message)}">${statusBadge(r.status, r.code)}</span>`).join("")}</div></td></tr>`;
   }).join("");
   const notes = Object.values(R.notes).map(n => `<div class="note">${esc(n)}</div>`).join("");
